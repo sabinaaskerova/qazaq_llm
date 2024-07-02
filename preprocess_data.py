@@ -23,7 +23,7 @@ for text in data:
     sentences = sent_tokenize(cleaned_text)
     cleaned_texts.extend(sentences)
 
-output_file = 'kazakh_cleaned_data.txt'
+output_file = 'kazakh_corpus.txt'
 
 with open(output_file, 'w', encoding='utf-8') as f:
     for sentence in cleaned_texts:
