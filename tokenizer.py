@@ -11,6 +11,12 @@ class Tokenizer:
     def detokenize(self, tokens):
         return self.sp.DecodePieces(tokens)
     
+    def token_to_id(self, token):
+        return self.sp.PieceToId(token)
+    
+    def id_to_token(self, id):
+        return self.sp.IdToPiece(id)
+    
     def encode(self, text):
         return self.sp.EncodeAsIds(text)
     
