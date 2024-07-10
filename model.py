@@ -50,18 +50,19 @@ class MultiHeadAttention(nn.Module):
 class SimpleAttention(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
-        self.query = nn.Linear(config['d_model'], config['d_model'])
-        self.key = nn.Linear(config['d_model'], config['d_model'])
-        self.value = nn.Linear(config['d_model'], config['d_model'])
-        self.out = nn.Linear(config['d_model'], config['d_model'])
+        self.d_model = config['d_model']
+        self.query = nn.Linear(self.d_model, self.d_model)
+        self.key = nn.Linear(self.d_model, self.d_model)
+        self.value = nn.Linear(self.d_model, self.d_model)
+        self.out = nn.Linear(self.d_model, self.d_model)
     
     def forward(self, x):
         q = self.query(x)
         k = self.key(x)
         v = self.value(x)
-        print(q.shape, k.shape, v.shape)
-        print(k.transpose(1, 2).shape)
-        att = F.softmax((q @ k.transpose(1, 2)) / math.sqrt(config['d_model']), dim=-1)
+        # print(q.shape, k.shape, v.shape)
+        # print(k.transpose(1, 2).shape)
+        att = F.softmax((q @ k.transpose(1, 2)) / math.sqrt(self.d_model), dim=-1)
         x = att @ v
         x = self.out(x)
         return x
@@ -154,6 +155,7 @@ if __name__ == "__main__":
 
     model = Transformer(config)
     x = torch.randint(0, config['d_model'], (1, 1), dtype=torch.long)  # Starting token
+    print("x",x)
     generated_tokens = model.generate(x, max_new_tokens=50)
     print(generated_tokens)
 
