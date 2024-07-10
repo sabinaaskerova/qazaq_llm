@@ -14,7 +14,7 @@ class RMSNorm(nn.Module):
         self.scale = nn.Parameter(torch.ones(config['d_model']))
     
     def forward(self, x):
-        return x / torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + config['eps']) * self.scale
+        return x / torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps) * self.scale
 
 
 class MultiHeadAttention(nn.Module):
@@ -83,13 +83,13 @@ class TransformerBlock(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
         # self.multi_head_attention = MultiHeadAttention(config)
-        self.multi_head_attention = SimpleAttention(config)
+        self.simple_attention = SimpleAttention(config)
         self.feed_forward = FeedForward(config)
         self.rms_norm = RMSNorm(config)
     
     def forward(self, x):
         x_norm = self.rms_norm(x) # first normalization
-        x = self.multi_head_attention(x_norm) + x
+        x = self.simple_attention(x_norm) + x
         x_norm = self.rms_norm(x) # second normalization
         x = self.feed_forward(x_norm) + x
         return x
