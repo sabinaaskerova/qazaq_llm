@@ -37,20 +37,26 @@ class MultiHeadAttention(nn.Module):
         k = self.key(x).view(x.shape[0], -1, self.n_keys, self.n_heads)
         v = self.value(x).view(x.shape[0], -1, self.n_values, self.n_heads)
 
+        print(q.shape, k.shape, v.shape)
         q = q.permute(0, 3, 2, 1)
         k = k.permute(0, 3, 1, 2)
         v = v.permute(0, 3, 1, 2)
+        v = v.permute(0, 1, 3, 2)
+        print(q.shape, k.shape, v.shape)
 
         att = F.softmax((q @ k) / math.sqrt(self.n_keys), dim=-1)
+        print("att", att.shape)
+        print("q@k", (q @ k).shape)
         x = (att @ v).permute(0, 2, 1, 3).reshape(x.shape[0], 
                                                   -1, self.n_values * self.n_heads)
         x = self.out(x)
         return x
     
 class SimpleAttention(nn.Module):
+    # scaled dot product attention
     def __init__(self, config) -> None:
         super().__init__()
-        self.d_model = config['d_model']
+        self.d_model = config['d_model'] # d_model = d_k = d_v = d_q in this case
         self.query = nn.Linear(self.d_model, self.d_model)
         self.key = nn.Linear(self.d_model, self.d_model)
         self.value = nn.Linear(self.d_model, self.d_model)
@@ -83,14 +89,15 @@ class FeedForward(nn.Module):
 class TransformerBlock(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
-        # self.multi_head_attention = MultiHeadAttention(config)
-        self.simple_attention = SimpleAttention(config)
+        self.multi_head_attention = MultiHeadAttention(config)
+        # self.simple_attention = SimpleAttention(config)
         self.feed_forward = FeedForward(config)
         self.rms_norm = RMSNorm(config)
     
     def forward(self, x):
         x_norm = self.rms_norm(x) # first normalization
-        x = self.simple_attention(x_norm) + x
+        # x = self.simple_attention(x_norm) + x
+        x = self.multi_head_attention(x_norm) + x
         x_norm = self.rms_norm(x) # second normalization
         x = self.feed_forward(x_norm) + x
         return x
@@ -154,8 +161,10 @@ if __name__ == "__main__":
     }
 
     model = Transformer(config)
-    x = torch.randint(0, config['d_model'], (1, 1), dtype=torch.long)  # Starting token
+    x = torch.randint(0, config['d_model'], (1, 1), dtype=torch.long) 
+    # x = torch.randint(0, config['d_model'], (1, 512), dtype=torch.long)
     print("x",x)
+    print("x.shape", x.shape)
     generated_tokens = model.generate(x, max_new_tokens=50)
     print(generated_tokens)
 
