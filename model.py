@@ -16,6 +16,24 @@ class RMSNorm(nn.Module):
     def forward(self, x):
         return x / torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps) * self.scale
 
+class PositionalEncoding(nn.Module):
+    def __init__(self, config) -> None:
+        super().__init__()
+        self.d_model = config['d_model']
+        self.n_positions = config['n_positions']
+        self.register_buffer('positional_encoding', self._get_positional_encoding())
+    
+    def _get_positional_encoding(self):
+        pe = torch.zeros(self.n_positions, self.d_model)
+        position = torch.arange(0, self.n_positions).unsqueeze(1).float()
+        div_term = torch.exp(torch.arange(0, self.d_model, 2).float() * -(math.log(10000.0) / self.d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        return pe.unsqueeze(0)
+    
+    def forward(self, x):
+        return x + self.positional_encoding[:, :x.shape[1], :]
+    
 
 class MultiHeadAttention(nn.Module):
     def __init__(self, config) -> None:
@@ -102,6 +120,7 @@ class TransformerBlock(nn.Module):
         x = self.feed_forward(x_norm) + x
         return x
     
+
 class RotaryEmbedding(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
@@ -120,6 +139,7 @@ class Transformer(nn.Module):
         self.n_layers = config['n_layers']
         self.d_model = config['d_model']
         self.embedding = nn.Embedding(self.d_model, self.d_model)
+        self.positional_encoding = PositionalEncoding(config)
         self.blocks = nn.ModuleList()
 
         for _ in range(self.n_layers):
@@ -130,6 +150,7 @@ class Transformer(nn.Module):
     
     def forward(self, x):
         x = self.embedding(x)
+        x = self.positional_encoding(x)
         for block in self.blocks:
             x = block(x)
         x = self.rms_norm(x)
@@ -157,12 +178,12 @@ if __name__ == "__main__":
         "n_keys": 512,
         "n_values": 512,
         "n_heads": 8,
-        "n_layers": 6
+        "n_layers": 6,
+        "n_positions": 1000
     }
 
     model = Transformer(config)
-    x = torch.randint(0, config['d_model'], (1, 1), dtype=torch.long) 
-    # x = torch.randint(0, config['d_model'], (1, 512), dtype=torch.long)
+    x = torch.randint(0, config['d_model'], (1, 1), dtype=torch.long)
     print("x",x)
     print("x.shape", x.shape)
     generated_tokens = model.generate(x, max_new_tokens=50)

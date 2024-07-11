@@ -11,7 +11,8 @@ if __name__ == "__main__":
         "n_keys": 512,
         "n_values": 512,
         "n_heads": 8,
-        "n_layers": 6
+        "n_layers": 6,
+        "n_positions": 512
     }
     with open('kazakh_corpus.txt', 'r', encoding='utf-8') as f:
         text = f.read()
