@@ -3,11 +3,13 @@ import torch.nn as nn
 from torch.nn import functional as F
 import math
 
+# Swish-Gated Linear Unit from "GLU Variants Improve Transformer" paper
 class SwiGLU(nn.Module):
     def forward(self, x):
         return x * torch.sigmoid(x) + x
 
-class RMSNorm(nn.Module):
+# "Root Mean Square Layer Normalization" paper
+class RMSNorm(nn.Module): 
     def __init__(self, config):
         super().__init__()
         self.eps = config['eps']
@@ -16,7 +18,8 @@ class RMSNorm(nn.Module):
     def forward(self, x):
         return x / torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps) * self.scale
 
-class PositionalEncoding(nn.Module):
+# Absolute Positional Encoding from "Attention is All You Need" paper
+class PositionalEncoding(nn.Module): 
     def __init__(self, config) -> None:
         super().__init__()
         self.d_model = config['d_model']
@@ -34,7 +37,24 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         return x + self.positional_encoding[:, :x.shape[1], :]
     
+# Relative Positional Encoding from "Self-Attention with Relative Position Representations" paper
+class RelativePositionalEncoding(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.d_model = config['d_model']
+        self.max_len = config['n_positions']
+        self.rel_emb = nn.Parameter(torch.randn(self.max_len * 2 - 1, self.d_model))
 
+    def forward(self, length):
+        range_vec = torch.arange(length)
+        range_mat = range_vec.unsqueeze(0) - range_vec.unsqueeze(1)
+        range_mat = range_mat + self.max_len - 1
+        return self.rel_emb[range_mat]
+
+
+
+# Multi-Head Attention from "Attention is All You Need" paper
+# using relative positional encoding
 class MultiHeadAttention(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
@@ -43,31 +63,33 @@ class MultiHeadAttention(nn.Module):
         self.n_values = config['n_values']
         self.d_model = config['d_model']
         self.n_heads = config['n_heads']
-        
+        self.head_dim = self.d_model // self.n_heads
 
         self.query = nn.Linear(self.d_model, self.n_queries * self.n_heads)
         self.key = nn.Linear(self.d_model, self.n_keys * self.n_heads)
         self.value = nn.Linear(self.d_model, self.n_values * self.n_heads)
         self.out = nn.Linear(self.n_values * self.n_heads, self.d_model)
 
+        self.relative_positional_encoding = RelativePositionalEncoding(config)
+
     def forward(self, x):
-        q = self.query(x).view(x.shape[0], -1, self.n_queries, self.n_heads)
-        k = self.key(x).view(x.shape[0], -1, self.n_keys, self.n_heads)
-        v = self.value(x).view(x.shape[0], -1, self.n_values, self.n_heads)
+        batch_size, seq_len, _ = x.size()
+        q = self.query(x).view(batch_size, seq_len, self.n_heads, self.n_queries).transpose(1, 2)
+        k = self.key(x).view(batch_size, seq_len, self.n_heads, self.n_keys).transpose(1, 2)
+        v = self.value(x).view(batch_size, seq_len, self.n_heads, self.n_values).transpose(1, 2)
+        
+        relative_positions = self.relative_positional_encoding(seq_len)
 
-        print(q.shape, k.shape, v.shape)
-        q = q.permute(0, 3, 2, 1)
-        k = k.permute(0, 3, 1, 2)
-        v = v.permute(0, 3, 1, 2)
-        v = v.permute(0, 1, 3, 2)
-        print(q.shape, k.shape, v.shape)
+        qk = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
 
-        att = F.softmax((q @ k) / math.sqrt(self.n_keys), dim=-1)
-        print("att", att.shape)
-        print("q@k", (q @ k).shape)
-        x = (att @ v).permute(0, 2, 1, 3).reshape(x.shape[0], 
-                                                  -1, self.n_values * self.n_heads)
-        x = self.out(x)
+        rel_scores = torch.einsum('bhld,lrd->bhlr', q, relative_positions)
+        qk += rel_scores
+
+        att = F.softmax(qk / math.sqrt(self.n_keys), dim=-1)
+        att_output = torch.matmul(att, v)
+        
+        att_output = att_output.transpose(1, 2).contiguous().view(batch_size, seq_len, -1)
+        x = self.out(att_output)
         return x
     
 class SimpleAttention(nn.Module):
@@ -84,8 +106,6 @@ class SimpleAttention(nn.Module):
         q = self.query(x)
         k = self.key(x)
         v = self.value(x)
-        # print(q.shape, k.shape, v.shape)
-        # print(k.transpose(1, 2).shape)
         att = F.softmax((q @ k.transpose(1, 2)) / math.sqrt(self.d_model), dim=-1)
         x = att @ v
         x = self.out(x)
@@ -108,13 +128,11 @@ class TransformerBlock(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
         self.multi_head_attention = MultiHeadAttention(config)
-        # self.simple_attention = SimpleAttention(config)
         self.feed_forward = FeedForward(config)
         self.rms_norm = RMSNorm(config)
     
     def forward(self, x):
         x_norm = self.rms_norm(x) # first normalization
-        # x = self.simple_attention(x_norm) + x
         x = self.multi_head_attention(x_norm) + x
         x_norm = self.rms_norm(x) # second normalization
         x = self.feed_forward(x_norm) + x
@@ -139,7 +157,6 @@ class Transformer(nn.Module):
         self.n_layers = config['n_layers']
         self.d_model = config['d_model']
         self.embedding = nn.Embedding(self.d_model, self.d_model)
-        self.positional_encoding = PositionalEncoding(config)
         self.blocks = nn.ModuleList()
 
         for _ in range(self.n_layers):
@@ -150,7 +167,6 @@ class Transformer(nn.Module):
     
     def forward(self, x):
         x = self.embedding(x)
-        x = self.positional_encoding(x)
         for block in self.blocks:
             x = block(x)
         x = self.rms_norm(x)
@@ -184,8 +200,6 @@ if __name__ == "__main__":
 
     model = Transformer(config)
     x = torch.randint(0, config['d_model'], (1, 1), dtype=torch.long)
-    print("x",x)
-    print("x.shape", x.shape)
     generated_tokens = model.generate(x, max_new_tokens=50)
     print(generated_tokens)
 
