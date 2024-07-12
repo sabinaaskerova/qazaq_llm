@@ -3,3 +3,8 @@ datasets
 tokenizers
 transformers
 sentencepiece
+requests
+pandas
+BeautifulSoup4
+zipfile
+sqlite3
