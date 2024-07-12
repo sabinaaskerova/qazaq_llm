@@ -32,7 +32,7 @@ if __name__ == "__main__":
     print(tensor_text[0])
 
     test_tokens = tensor_text[0, :1]
-    tensor_test_tokens = torch.tensor(test_tokens).unsqueeze(0)
+    tensor_test_tokens = test_tokens.clone().detach().unsqueeze(0)
     print(len(test_tokens))
     print("test_tokens", test_tokens)
     print("tensor_test_tokens", tensor_test_tokens)
