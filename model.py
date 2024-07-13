@@ -18,32 +18,16 @@ class RMSNorm(nn.Module):
     def forward(self, x):
         return x / torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps) * self.scale
 
-# Absolute Positional Encoding from "Attention is All You Need" paper
-class PositionalEncoding(nn.Module): 
-    def __init__(self, config) -> None:
-        super().__init__()
-        self.d_model = config['d_model']
-        self.n_positions = config['n_positions']
-        self.register_buffer('positional_encoding', self._get_positional_encoding())
-    
-    def _get_positional_encoding(self):
-        pe = torch.zeros(self.n_positions, self.d_model)
-        position = torch.arange(0, self.n_positions).unsqueeze(1).float()
-        div_term = torch.exp(torch.arange(0, self.d_model, 2).float() * -(math.log(10000.0) / self.d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        return pe.unsqueeze(0)
-    
-    def forward(self, x):
-        return x + self.positional_encoding[:, :x.shape[1], :]
-    
+
 # Relative Positional Encoding from "Self-Attention with Relative Position Representations" paper
 class RelativePositionalEncoding(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.d_model = config['d_model']
+        self.n_heads = config['n_heads']
+        self.head_dim = self.d_model // self.n_heads # for one head
         self.max_len = config['n_positions']
-        self.rel_emb = nn.Parameter(torch.randn(self.max_len * 2 - 1, self.d_model))
+        self.rel_emb = nn.Parameter(torch.randn(self.max_len * 2 - 1, self.head_dim))
 
     def forward(self, length):
         range_vec = torch.arange(length)
@@ -61,31 +45,38 @@ class MultiHeadAttention(nn.Module):
         self.n_queries = config['n_queries']
         self.n_keys = config['n_keys']
         self.n_values = config['n_values']
+
         self.d_model = config['d_model']
         self.n_heads = config['n_heads']
-        self.head_dim = self.d_model // self.n_heads
+        self.head_dim = self.d_model // self.n_heads # d_k = d_v = d_q = d_model // n_heads
 
-        self.query = nn.Linear(self.d_model, self.n_queries * self.n_heads)
-        self.key = nn.Linear(self.d_model, self.n_keys * self.n_heads)
-        self.value = nn.Linear(self.d_model, self.n_values * self.n_heads)
-        self.out = nn.Linear(self.n_values * self.n_heads, self.d_model)
+        assert self.n_keys % self.n_heads == 0, "n_keys must be divisible by n_heads"
+        assert self.n_queries % self.n_heads == 0, "n_queries must be divisible by n_heads"
+        assert self.n_values % self.n_heads == 0, "n_values must be divisible by n_heads"
+
+        self.query = nn.Linear(self.d_model, self.d_model) 
+        self.key = nn.Linear(self.d_model, self.d_model)
+        self.value = nn.Linear(self.d_model, self.d_model)
+        self.out = nn.Linear(self.d_model, self.d_model)
 
         self.relative_positional_encoding = RelativePositionalEncoding(config)
 
     def forward(self, x):
         batch_size, seq_len, _ = x.size()
-        q = self.query(x).view(batch_size, seq_len, self.n_heads, self.n_queries).transpose(1, 2)
-        k = self.key(x).view(batch_size, seq_len, self.n_heads, self.n_keys).transpose(1, 2)
-        v = self.value(x).view(batch_size, seq_len, self.n_heads, self.n_values).transpose(1, 2)
         
-        relative_positions = self.relative_positional_encoding(seq_len)
+        q = self.query(x).view(batch_size, seq_len, self.n_heads, self.head_dim).transpose(1, 2) # we project the queries, keys, and values into n_heads
+        k = self.key(x).view(batch_size, seq_len, self.n_heads, self.head_dim).transpose(1, 2)
+        v = self.value(x).view(batch_size, seq_len, self.n_heads, self.head_dim).transpose(1, 2)
 
+        relative_positions = self.relative_positional_encoding(seq_len)
+        print("relative_positions:", relative_positions.shape)
         qk = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
 
         rel_scores = torch.einsum('bhld,lrd->bhlr', q, relative_positions)
         qk += rel_scores
 
-        att = F.softmax(qk / math.sqrt(self.n_keys), dim=-1)
+        # att = F.softmax(qk / math.sqrt(self.n_keys), dim=-1)
+        att = F.softmax(qk, dim=-1)
         att_output = torch.matmul(att, v)
         
         att_output = att_output.transpose(1, 2).contiguous().view(batch_size, seq_len, -1)
@@ -156,14 +147,14 @@ class Transformer(nn.Module):
         super().__init__()
         self.n_layers = config['n_layers']
         self.d_model = config['d_model']
-        self.embedding = nn.Embedding(self.d_model, self.d_model)
+        self.embedding = nn.Embedding(self.d_model, self.d_model) 
         self.blocks = nn.ModuleList()
 
         for _ in range(self.n_layers):
             self.blocks.append(TransformerBlock(config))
 
         self.rms_norm = RMSNorm(config)
-        self.out = nn.Linear(self.d_model, self.d_model)        
+        self.out = nn.Linear(self.d_model, self.d_model)  
     
     def forward(self, x):
         x = self.embedding(x)
@@ -183,6 +174,17 @@ class Transformer(nn.Module):
             generated_tokens.append(next_token)
 
         return torch.cat(generated_tokens, dim=1)
+    
+class LanguageModel(nn.Module):
+    def __init__(self, config) -> None:
+        super().__init__()
+        self.transformer = Transformer(config)
+        self.embedding = nn.Embedding(config['d_model'], config['d_model'])
+    
+    def forward(self, x):
+        x = self.embedding(x)
+        x = self.transformer(x)
+        return x
 
 
 if __name__ == "__main__":
@@ -190,16 +192,19 @@ if __name__ == "__main__":
     config = {
         "d_model": 512, # embedding size, number of features in the input, output
         "eps": 1e-6, # epsilon value for normalization
-        "n_queries": 512, 
-        "n_keys": 512,
-        "n_values": 512,
+        "n_queries": 128, # = length of the input sequence
+        "n_keys": 128,
+        "n_values": 128,
         "n_heads": 8,
         "n_layers": 6,
         "n_positions": 1000
+        # d_k, d_v, d_q = d_model // n_heads
     }
 
     model = Transformer(config)
     x = torch.randint(0, config['d_model'], (1, 1), dtype=torch.long)
+    # print("x.:", x)
+    # x = torch.randint(0, config['vocab_size'], (1, config['seq_len']), dtype=torch.long)
     generated_tokens = model.generate(x, max_new_tokens=50)
     print(generated_tokens)
 
