@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import math
-
+from tokenizer import Tokenizer
 # Swish-Gated Linear Unit from "GLU Variants Improve Transformer" paper
 class SwiGLU(nn.Module):
     def forward(self, x):
@@ -69,7 +69,6 @@ class MultiHeadAttention(nn.Module):
         v = self.value(x).view(batch_size, seq_len, self.n_heads, self.head_dim).transpose(1, 2)
 
         relative_positions = self.relative_positional_encoding(seq_len)
-        print("relative_positions:", relative_positions.shape)
         qk = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
 
         rel_scores = torch.einsum('bhld,lrd->bhlr', q, relative_positions)
@@ -130,31 +129,22 @@ class TransformerBlock(nn.Module):
         return x
     
 
-class RotaryEmbedding(nn.Module):
-    def __init__(self, config) -> None:
-        super().__init__()
-        self.d_model = config['d_model']
-        self.n_heads = config['n_heads']
-        self.n_layers = config['n_layers']
-        self.rotary_pos = nn.Parameter(torch.randn(self.n_layers, self.n_heads, self.d_model // self.n_heads))
-        self.rotary_pos = self.rotary_pos.unsqueeze(0).unsqueeze(0)
     
-    def forward(self, x):
-        return x + self.rotary_pos
-
-class Transformer(nn.Module):
+class LanguageModel(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
-        self.n_layers = config['n_layers']
         self.d_model = config['d_model']
-        self.embedding = nn.Embedding(self.d_model, self.d_model) 
+        self.vocab_size = config['vocab_size']
+        self.n_layers = config['n_layers']
+        self.seq_len = config['n_positions']
+
+        self.embedding = nn.Embedding(self.vocab_size, self.d_model)
+        self.rms_norm = RMSNorm(config)
+        self.out = nn.Linear(self.d_model, self.vocab_size)
         self.blocks = nn.ModuleList()
 
         for _ in range(self.n_layers):
             self.blocks.append(TransformerBlock(config))
-
-        self.rms_norm = RMSNorm(config)
-        self.out = nn.Linear(self.d_model, self.d_model)  
     
     def forward(self, x):
         x = self.embedding(x)
@@ -164,30 +154,47 @@ class Transformer(nn.Module):
         x = self.out(x)
         return x
 
-    def generate(self, x, max_new_tokens=50):
+    @torch.no_grad()
+    def generate(self, idx, max_new_tokens=50, temperature=1.0, do_sample=False, top_k=None):
         generated_tokens = []
 
         for _ in range(max_new_tokens):
-            logits = self(x)
-            next_token = torch.argmax(logits[:, -1, :], dim=-1).unsqueeze(1)
-            x = torch.cat((x, next_token), dim=1)
-            generated_tokens.append(next_token)
+            idx_cond = idx if idx.size(1) <= self.seq_len else idx[:, -self.seq_len:]
+            logits = self(idx_cond)
+            logits = logits[:, -1, :] / temperature
+
+            if top_k is not None:
+                v, _ = torch.topk(logits, top_k)
+                logits[logits < v[:, [-1]]] = -float('Inf')
+
+            probs = F.softmax(logits, dim=-1)
+            if do_sample:
+                idx_next = torch.multinomial(probs, num_samples=1)
+            else:
+                _, idx_next = torch.topk(probs, k=1, dim=-1)
+
+            idx = torch.cat((idx, idx_next), dim=1)
+            generated_tokens.append(idx_next)
 
         return torch.cat(generated_tokens, dim=1)
-    
-class LanguageModel(nn.Module):
-    def __init__(self, config) -> None:
-        super().__init__()
-        self.transformer = Transformer(config)
-        self.embedding = nn.Embedding(config['d_model'], config['d_model'])
-    
-    def forward(self, x):
-        x = self.embedding(x)
-        x = self.transformer(x)
-        return x
 
 
 if __name__ == "__main__":
+
+    
+    with open('kazakh_corpus.txt', 'r', encoding='utf-8') as f:
+        text = f.read()
+
+    tokenizer = Tokenizer("m.model")
+    text = tokenizer.encode(text)
+    unique_tokens = set(text)
+    num_unique_tokens = len(unique_tokens)
+
+
+    tensor_text = torch.tensor(text).unsqueeze(0)
+    test_tokens = tensor_text[0, :1]
+    tensor_test_tokens = test_tokens.clone().detach().unsqueeze(0)
+
    
     config = {
         "d_model": 512, # embedding size, number of features in the input, output
@@ -197,14 +204,14 @@ if __name__ == "__main__":
         "n_values": 128,
         "n_heads": 8,
         "n_layers": 6,
-        "n_positions": 1000
+        "n_positions": 1000,
+        "vocab_size": num_unique_tokens
         # d_k, d_v, d_q = d_model // n_heads
     }
 
-    model = Transformer(config)
-    x = torch.randint(0, config['d_model'], (1, 1), dtype=torch.long)
-    # print("x.:", x)
-    # x = torch.randint(0, config['vocab_size'], (1, config['seq_len']), dtype=torch.long)
-    generated_tokens = model.generate(x, max_new_tokens=50)
-    print(generated_tokens)
+    model = LanguageModel(config)
+    model.eval()
 
+    generated_text = model.generate(tensor_test_tokens)
+    print(generated_text)
+    print(tokenizer.decode(generated_text.tolist()))
