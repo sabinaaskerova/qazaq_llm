@@ -182,18 +182,17 @@ class LanguageModel(nn.Module):
 if __name__ == "__main__":
 
     
-    with open('kazakh_corpus.txt', 'r', encoding='utf-8') as f:
-        text = f.read()
-
+    num_unique_tokens = torch.load("num_unique_tokens.pt")
+    tensor_text = torch.load("tensor_text.pt")
     tokenizer = Tokenizer("m.model")
-    text = tokenizer.encode(text)
-    unique_tokens = set(text)
-    num_unique_tokens = len(unique_tokens)
 
-
-    tensor_text = torch.tensor(text).unsqueeze(0)
     test_tokens = tensor_text[0, :1]
     tensor_test_tokens = test_tokens.clone().detach().unsqueeze(0)
+
+    # print("tensor_test_tokens", tensor_test_tokens)
+    print("test_tokens", test_tokens)
+    # print("tensor_text.shape", tensor_text.shape)
+    print("tensor_test_tokens.shape", tensor_test_tokens.shape)
 
    
     config = {
@@ -211,6 +210,7 @@ if __name__ == "__main__":
 
     model = LanguageModel(config)
     model.eval()
+
 
     generated_text = model.generate(tensor_test_tokens)
     print(generated_text)
