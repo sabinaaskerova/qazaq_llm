@@ -30,9 +30,11 @@ class RelativePositionalEncoding(nn.Module):
         self.rel_emb = nn.Parameter(torch.randn(self.max_len * 2 - 1, self.head_dim))
 
     def forward(self, length):
-        range_vec = torch.arange(length)
+        range_vec = torch.arange(length, device=self.rel_emb.device)
         range_mat = range_vec.unsqueeze(0) - range_vec.unsqueeze(1)
         range_mat = range_mat + self.max_len - 1
+        range_mat = torch.clamp(range_mat, 0, self.max_len * 2 - 2)  # clamp to valid range
+        assert range_mat.min() >= 0 and range_mat.max() < self.rel_emb.size(0), "Index out of bounds in relative positional encoding"
         return self.rel_emb[range_mat]
 
 
@@ -82,25 +84,6 @@ class MultiHeadAttention(nn.Module):
         x = self.out(att_output)
         return x
     
-class SimpleAttention(nn.Module):
-    # scaled dot product attention
-    def __init__(self, config) -> None:
-        super().__init__()
-        self.d_model = config['d_model'] # d_model = d_k = d_v = d_q in this case
-        self.query = nn.Linear(self.d_model, self.d_model)
-        self.key = nn.Linear(self.d_model, self.d_model)
-        self.value = nn.Linear(self.d_model, self.d_model)
-        self.out = nn.Linear(self.d_model, self.d_model)
-    
-    def forward(self, x):
-        q = self.query(x)
-        k = self.key(x)
-        v = self.value(x)
-        att = F.softmax((q @ k.transpose(1, 2)) / math.sqrt(self.d_model), dim=-1)
-        x = att @ v
-        x = self.out(x)
-        return x
-
 class FeedForward(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
@@ -210,7 +193,7 @@ if __name__ == "__main__":
 
     model = LanguageModel(config)
     model.eval()
-
+    print(tensor_test_tokens.size())
 
     generated_text = model.generate(tensor_test_tokens)
     print(generated_text)
