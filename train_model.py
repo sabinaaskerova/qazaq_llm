@@ -42,7 +42,7 @@ config = {
     "n_heads": 8,
     "n_layers": 6,
     "n_positions": 1000,
-    "vocab_size": num_unique_tokens + 5
+    "vocab_size": num_unique_tokens + 1
 }
 
 model = LanguageModel(config)
@@ -95,4 +95,4 @@ model.eval()
 start_tokens = tensor_text[0][:20].squeeze(0).unsqueeze(0).to(device)
 generated_text = model.generate(start_tokens, max_new_tokens=100, temperature=1.0)
 print(generated_text)
-# print(tokenizer.decode(generated_text.tolist()[0]))
+print(tokenizer.decode(generated_text.tolist()[0]))
