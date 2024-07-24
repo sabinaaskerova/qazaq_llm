@@ -7,7 +7,10 @@ from nltk.tokenize import sent_tokenize
 
 dataset = load_dataset('Nothingger/Kazakh-Literature-Collection')
 
+wiki_dataset = load_dataset('amandyk/kazakh_wiki_articles')
+
 data = dataset['train']['text']
+data = data + wiki_dataset['train']['text']
 
 unique_chars = "!()*,-.012346789:;?«»ІАБВГДЕЖЗИКЛМНОПРСТУФХЧШЫЭЯабвгдежзийклмнопрстуфхцчшщъыьэюяіҒғҚқҢңҮүҰұһӘәӨө–—•−─"
 
@@ -23,7 +26,8 @@ for text in data:
     sentences = sent_tokenize(cleaned_text)
     cleaned_texts.extend(sentences)
 
-output_file = 'kazakh_corpus.txt'
+data_path = "data/"
+output_file = data_path+'kazakh_corpus.txt'
 
 with open(output_file, 'w', encoding='utf-8') as f:
     for sentence in cleaned_texts:
