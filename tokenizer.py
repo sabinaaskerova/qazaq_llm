@@ -25,7 +25,8 @@ class Tokenizer:
     
 
 if __name__ == "__main__":
-    model_path = "m.model"
+    tokenizer_path = "tokenizer/"
+    model_path = tokenizer_path+"m.model"
     tokenizer = Tokenizer(model_path)
 
     text = "Алматыда дәрігерлер жүрек тамырлары 100 пайызға жуық тарылып кеткен науқасты аман алып қалды"

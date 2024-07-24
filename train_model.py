@@ -6,10 +6,10 @@ torch.autograd.set_detect_anomaly(True)
 import os
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
-
-tokenizer = Tokenizer("m.model")
-tensor_text = torch.load("tensor_text.pt")
-num_unique_tokens = torch.load("num_unique_tokens.pt")
+tokenizer_path = "tokenizer/"
+tokenizer = Tokenizer(tokenizer_path+"m.model")
+tensor_text = torch.load(tokenizer_path+"tensor_text.pt")
+num_unique_tokens = torch.load(tokenizer_path+"num_unique_tokens.pt")
 
 class TextDataset(torch.utils.data.Dataset):
     def __init__(self, tensor_text):
@@ -105,11 +105,11 @@ for epoch in range(num_epochs):
             print(f"Early stopping triggered after {epoch+1} epochs.")
             break
 
-
-model_save_path = "language_model_state_dict.pth"
+languagemodel_path = "language_model/"
+model_save_path = languagemodel_path+"language_model_state_dict.pth"
 torch.save(model.state_dict(), model_save_path)
 
-optimizer_save_path = "optimizer.pth"
+optimizer_save_path = languagemodel_path+"optimizer.pth"
 torch.save(optimizer.state_dict(), optimizer_save_path)
 
 print(f"Model and optimizer state saved to {model_save_path} and {optimizer_save_path}, respectively.")

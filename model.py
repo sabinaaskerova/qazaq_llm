@@ -164,10 +164,10 @@ class LanguageModel(nn.Module):
 
 if __name__ == "__main__":
 
-    
-    num_unique_tokens = torch.load("num_unique_tokens.pt")
-    tensor_text = torch.load("tensor_text.pt")
-    tokenizer = Tokenizer("m.model")
+    tokenizer_path = "tokenizer/"
+    num_unique_tokens = torch.load(tokenizer_path+"num_unique_tokens.pt")
+    tensor_text = torch.load(tokenizer_path+"tensor_text.pt")
+    tokenizer = Tokenizer(tokenizer_path+"m.model")
 
     test_tokens = tensor_text[0, :1]
     tensor_test_tokens = test_tokens.clone().detach().unsqueeze(0)

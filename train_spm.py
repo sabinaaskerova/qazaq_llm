@@ -1,3 +1,4 @@
 import sentencepiece as spm
 
-spm.SentencePieceTrainer.train(input='kazakh_corpus.txt', model_prefix='m', vocab_size=1000)
+data_path = "data/"
+spm.SentencePieceTrainer.train(input=data_path+'kazakh_corpus.txt', model_prefix='tokenizer/m', vocab_size=1000)

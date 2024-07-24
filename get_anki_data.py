@@ -40,7 +40,8 @@ def save_to_txt(rows, output_file):
     df[['Front', 'Back']].to_csv(output_file, sep='\t', index=False, header=False)  # Save with \t separator and no header
     
     # Rename the file extension to .txt
-    txt_file = os.path.splitext(output_file)[0] + ".txt"
+    data_path = "data/"
+    txt_file = data_path+ os.path.splitext(output_file)[0] + ".txt"
     os.rename(output_file, txt_file)
     
     print(f"Saved data to {txt_file}")
@@ -67,7 +68,8 @@ if not os.path.exists(new_filename):
 print(f"Renamed {apkg_file_path} to {new_filename}")
 
 zip_file = new_filename
-output_folder = "anki_kaz_rus"
+data_path = "data/"
+output_folder = data_path + "anki_kaz_rus"
 
 with zipfile.ZipFile(zip_file, 'r') as zip_ref:
     zip_ref.extractall(output_folder)
@@ -77,8 +79,6 @@ print(f"Unzipped {zip_file} into {output_folder}")
 
 rows = read_apkg_db(output_folder+'/collection.anki21')
 
-output_tsv_file = "anki_data.tsv"
-# save_to_tsv(rows, output_tsv_file)
 output_text_file = "anki_data.txt"
 save_to_txt(rows, output_text_file)
 
