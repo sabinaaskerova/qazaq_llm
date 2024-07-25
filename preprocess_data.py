@@ -3,6 +3,7 @@ import re
 import nltk
 nltk.download('punkt')
 from nltk.tokenize import sent_tokenize
+import time
 
 def clean_and_tokenize(texts, pattern):
     cleaned_texts = []
@@ -19,21 +20,37 @@ def clean_and_tokenize(texts, pattern):
 unique_chars = "!()*,-.012346789:;?«»ІАБВГДЕЖЗИКЛМНОПРСТУФХЧШЫЭЯабвгдежзийклмнопрстуфхцчшщъыьэюяіҒғҚқҢңҮүҰұһӘәӨө–—•−─"
 pattern = re.compile(f"[{re.escape(unique_chars)}\\s]+")
 
-
-dataset = load_dataset('Nothingger/Kazakh-Literature-Collection', split='train', streaming=True)
-wiki_dataset = load_dataset('amandyk/kazakh_wiki_articles', split='train', streaming=True)
-multidomain_dataset = load_dataset("kz-transformers/multidomain-kazakh-dataset", split='train', streaming=True)
-
-
 data_path = "data/"
 output_file = data_path + 'kazakh_corpus.txt'
 
-# Save cleaned data to file
+max_retries = 5
+retry_wait = 5
+
+# Function to load dataset with retries if connection to huggingface fails
+def load_dataset_with_retries(dataset_name, split):
+    for attempt in range(max_retries):
+        try:
+            dataset = load_dataset(dataset_name, split=split, streaming=True)
+            return dataset
+        except Exception as e:
+            print(f"Failed to load dataset: {e}. Retrying in {retry_wait} seconds... [{attempt + 1}/{max_retries}]")
+            time.sleep(retry_wait)
+    raise Exception(f"Failed to load dataset {dataset_name} after {max_retries} attempts")
+
+# Load Qazaq text datasets
+dataset = load_dataset_with_retries('Nothingger/Kazakh-Literature-Collection', 'train')
+wiki_dataset = load_dataset_with_retries('amandyk/kazakh_wiki_articles', 'train')
+multidomain_dataset = load_dataset_with_retries("kz-transformers/multidomain-kazakh-dataset", 'train')
+
+
 with open(output_file, 'w', encoding='utf-8') as f:
     for dataset_chunk in [dataset, wiki_dataset, multidomain_dataset]:
         for example in dataset_chunk:
-            cleaned_texts = clean_and_tokenize([example['text']], pattern)
-            for sentence in cleaned_texts:
-                f.write(sentence.strip() + '\n')
+            try:
+                cleaned_texts = clean_and_tokenize([example['text']], pattern)
+                for sentence in cleaned_texts:
+                    f.write(sentence.strip() + '\n')
+            except Exception as e:
+                print(f"Error processing text: {e}")
 
 print(f"Cleaned data saved to {output_file}")
