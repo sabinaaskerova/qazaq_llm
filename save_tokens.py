@@ -22,7 +22,7 @@ unique_tokens = set(tokenized_text)
 num_unique_tokens = len(unique_tokens)
 print(num_unique_tokens)
 
-tensor_text = torch.tensor(tokenized).unsqueeze(0)
+tensor_text = torch.tensor(tokenized_text).unsqueeze(0)
 print("tensor_text.shape", tensor_text.shape)
 torch.save(tensor_text, tokenizer_path+"tensor_text.pt")
 torch.save(num_unique_tokens, tokenizer_path+"num_unique_tokens.pt")

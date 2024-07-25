@@ -4,12 +4,19 @@ from tokenizer import Tokenizer
 import torch.nn as nn
 torch.autograd.set_detect_anomaly(True)
 import os
+import sentencepiece as spm
+
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
 tokenizer_path = "tokenizer/"
-tokenizer = Tokenizer(tokenizer_path+"m.model")
+# tokenizer = Tokenizer(tokenizer_path+"m.model")
+tokenizer = spm.SentencePieceProcessor()
+tokenizer.Load(tokenizer_path + "m.model")
 tensor_text = torch.load(tokenizer_path+"tensor_text.pt")
-num_unique_tokens = torch.load(tokenizer_path+"num_unique_tokens.pt")
+
+vocab_size = tokenizer.get_piece_size()
+vocab_tokens = [tokenizer.id_to_piece(i) for i in range(vocab_size)]
+print(f"First 10 tokens in vocabulary: {vocab_tokens[:100]}")
 
 class TextDataset(torch.utils.data.Dataset):
     def __init__(self, tensor_text):
@@ -24,14 +31,13 @@ class TextDataset(torch.utils.data.Dataset):
 dataset = TextDataset(tensor_text)
 
 train_size = len(dataset)
+print(f"Train size: {train_size}")
 train_dataset = dataset
 
 batch_size = 1024
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 print(f"Number of batches: {len(train_loader)}")
 print(f"Number of samples: {len(train_loader) * batch_size}")
-print(f"Number of unique tokens: {num_unique_tokens}")
-print(f"Number of tokens: {len(tensor_text[0])}")
 print(f"Batch size: {batch_size}")
 config = {
     "d_model": 512,
@@ -42,7 +48,7 @@ config = {
     "n_heads": 8,
     "n_layers": 6,
     "n_positions": 1000,
-    "vocab_size": num_unique_tokens + 1
+    "vocab_size": vocab_size
 }
 
 model = LanguageModel(config)
@@ -108,7 +114,7 @@ for epoch in range(num_epochs):
 languagemodel_path = "language_model/"
 if not os.path.exists(languagemodel_path):
     os.makedirs(languagemodel_path)
-    
+
 model_save_path = languagemodel_path+"language_model_state_dict.pth"
 torch.save(model.state_dict(), model_save_path)
 
