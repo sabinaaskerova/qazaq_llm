@@ -106,6 +106,9 @@ for epoch in range(num_epochs):
             break
 
 languagemodel_path = "language_model/"
+if not os.path.exists(languagemodel_path):
+    os.makedirs(languagemodel_path)
+    
 model_save_path = languagemodel_path+"language_model_state_dict.pth"
 torch.save(model.state_dict(), model_save_path)
 
