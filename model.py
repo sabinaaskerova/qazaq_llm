@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 import math
 from tokenizer import Tokenizer
+from data_config import *
 # Swish-Gated Linear Unit from "GLU Variants Improve Transformer" paper
 class SwiGLU(nn.Module):
     def forward(self, x):
@@ -164,7 +165,7 @@ class LanguageModel(nn.Module):
 
 if __name__ == "__main__":
 
-    tokenizer_path = "tokenizer/"
+    tokenizer_path = TOKENIZER_PATH
     num_unique_tokens = torch.load(tokenizer_path+"num_unique_tokens.pt")
     tensor_text = torch.load(tokenizer_path+"tensor_text.pt")
     tokenizer = Tokenizer(tokenizer_path+"m.model")

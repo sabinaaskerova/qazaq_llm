@@ -1,14 +1,14 @@
 import torch
 from tokenizer import Tokenizer
-
-data_path = "data/"
+from data_config import *
+data_path = DATA_PATH
 
 def data_generator(file_path):
     with open(file_path, 'r', encoding='utf-8') as file:
         for line in file:
             yield line.strip()
 
-tokenizer_path = "tokenizer/"
+tokenizer_path = TOKENIZER_PATH
 tokenizer = Tokenizer(tokenizer_path+"m.model")
 
 tokenized_text = []

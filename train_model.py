@@ -5,10 +5,11 @@ import torch.nn as nn
 torch.autograd.set_detect_anomaly(True)
 import os
 import sentencepiece as spm
+from data_config import *
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
-tokenizer_path = "tokenizer/"
+tokenizer_path = TOKENIZER_PATH
 # tokenizer = Tokenizer(tokenizer_path+"m.model")
 tokenizer = spm.SentencePieceProcessor()
 tokenizer.Load(tokenizer_path + "m.model")
@@ -111,7 +112,7 @@ for epoch in range(num_epochs):
             print(f"Early stopping triggered after {epoch+1} epochs.")
             break
 
-languagemodel_path = "language_model/"
+languagemodel_path = MODEL_STATES_PATH
 if not os.path.exists(languagemodel_path):
     os.makedirs(languagemodel_path)
 

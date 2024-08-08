@@ -4,6 +4,7 @@ import nltk
 nltk.download('punkt')
 from nltk.tokenize import sent_tokenize
 import time
+from data_config import *
 
 def clean_and_tokenize(texts, pattern):
     cleaned_texts = []
@@ -20,7 +21,7 @@ def clean_and_tokenize(texts, pattern):
 unique_chars = "!()*,-.012346789:;?«»ІАБВГДЕЖЗИКЛМНОПРСТУФХЧШЫЭЯабвгдежзийклмнопрстуфхцчшщъыьэюяіҒғҚқҢңҮүҰұһӘәӨө–—•−─"
 pattern = re.compile(f"[{re.escape(unique_chars)}\\s]+")
 
-data_path = "data/"
+data_path = DATA_PATH
 output_file = data_path + 'kazakh_corpus.txt'
 
 max_retries = 5

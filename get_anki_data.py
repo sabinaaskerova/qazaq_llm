@@ -5,6 +5,7 @@ import os
 import requests
 import zipfile
 from bs4 import BeautifulSoup
+from data_config import *
 
 def read_apkg_db(db_path):
     conn = sqlite3.connect(db_path)
@@ -40,7 +41,7 @@ def save_to_txt(rows, output_file):
     df[['Front', 'Back']].to_csv(output_file, sep='\t', index=False, header=False)  # Save with \t separator and no header
     
     # Rename the file extension to .txt
-    data_path = "data/"
+    data_path = DATA_PATH
     txt_file = data_path+ os.path.splitext(output_file)[0] + ".txt"
     os.rename(output_file, txt_file)
     
@@ -68,7 +69,7 @@ if not os.path.exists(new_filename):
 print(f"Renamed {apkg_file_path} to {new_filename}")
 
 zip_file = new_filename
-data_path = "data/"
+data_path = DATA_PATH
 output_folder = data_path + "anki_kaz_rus"
 
 with zipfile.ZipFile(zip_file, 'r') as zip_ref:
