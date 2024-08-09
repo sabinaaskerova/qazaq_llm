@@ -6,5 +6,6 @@ sentencepiece
 requests
 pandas
 BeautifulSoup4
-zipfile
-sqlite3
+huggingface_hub
+pandas
+googletrans==4.0.0-rc1 # need this specific version, otherwise it will not work
