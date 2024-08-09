@@ -23,15 +23,3 @@ class Tokenizer:
     def decode(self, ids):
         return self.sp.DecodeIds(ids)
     
-
-if __name__ == "__main__":
-    tokenizer_path = "tokenizer/"
-    model_path = tokenizer_path+"m.model"
-    tokenizer = Tokenizer(model_path)
-
-    text = "Алматыда дәрігерлер жүрек тамырлары 100 пайызға жуық тарылып кеткен науқасты аман алып қалды"
-    tokens = tokenizer.tokenize(text)
-    print(f"Tokens: {tokens}")
-    ids = tokenizer.encode(text)
-    print(f"IDs: {ids}")
-   
