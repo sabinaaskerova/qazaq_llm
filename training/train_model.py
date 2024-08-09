@@ -1,11 +1,11 @@
 import torch
 from model import LanguageModel
-from tokenizer import Tokenizer
+from tokenization.tokenizer import Tokenizer
 import torch.nn as nn
 torch.autograd.set_detect_anomaly(True)
 import os
 import sentencepiece as spm
-from data_config import *
+from project_config.data_config import *
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 

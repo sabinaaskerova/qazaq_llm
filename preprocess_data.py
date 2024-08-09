@@ -4,7 +4,7 @@ import nltk
 nltk.download('punkt')
 from nltk.tokenize import sent_tokenize
 import time
-from data_config import *
+from project_config.data_config import *
 
 def clean_and_tokenize(texts, pattern):
     cleaned_texts = []

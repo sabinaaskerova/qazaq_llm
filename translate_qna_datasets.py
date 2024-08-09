@@ -1,10 +1,8 @@
 import pandas as pd
-import time
 from googletrans import Translator
 from tqdm import tqdm
-import random
 import csv
-from data_config import *
+from project_config.data_config import *
 
     
 def translate_text(text, dest='kk'):
@@ -71,8 +69,18 @@ if __name__ == "__main__":
         writer = csv.DictWriter(f_output, fieldnames=fieldnames)
         writer.writeheader()
 
-        with open('error_log.txt', 'w') as error_log:
+        logs_path = LOGS_PATH
+        if not os.path.exists(logs_path):
+            os.makedirs(logs_path)
+
+        with open(logs_path+'error_log.txt', 'w') as error_log:
             for chunk in tqdm(pd.read_csv(input_file, chunksize=chunk_size), desc="Translating chunks"):
                 translate_and_write_chunk(chunk, f_output, writer, error_log)
 
     print("Translation completed and saved.")
+    input_file = INSTRUCTION_DATA_PATH + "dolly_kz.csv"
+    output_file = INSTRUCTION_DATA_PATH + "dolly_kz_fixed.csv"
+
+    retranslate_failed_rows(input_file, output_file)
+
+    print("Retranslation completed and saved.")

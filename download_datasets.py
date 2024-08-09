@@ -1,5 +1,5 @@
 import pandas as pd
-from data_config import *
+from project_config.data_config import *
 
 ## Downloading instruction datasets that will be used for question answering fine-tuning
 

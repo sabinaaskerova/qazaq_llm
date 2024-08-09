@@ -1,6 +1,6 @@
 import sentencepiece as spm
 import os
-from data_config import *
+from project_config.data_config import *
 
 data_path = DATA_PATH
 tokenizer_path = TOKENIZER_PATH

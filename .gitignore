@@ -1,7 +1,9 @@
 __pycache__
 *.pth
-data/
-tokenizer/
+plain_text_datasets/
+instruction_datasets/
+tokenizer_model/
 .env
 .venv/
 *.csv
+*.egg-info/

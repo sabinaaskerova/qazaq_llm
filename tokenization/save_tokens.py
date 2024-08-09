@@ -1,6 +1,6 @@
 import torch
 from tokenizer import Tokenizer
-from data_config import *
+from project_config.data_config import *
 data_path = DATA_PATH
 
 def data_generator(file_path):

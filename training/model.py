@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import math
-from tokenizer import Tokenizer
-from data_config import *
+from tokenization.tokenizer import Tokenizer
+from project_config.data_config import *
 # Swish-Gated Linear Unit from "GLU Variants Improve Transformer" paper
 class SwiGLU(nn.Module):
     def forward(self, x):
