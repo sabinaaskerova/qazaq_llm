@@ -16,15 +16,12 @@ def translate_text(text, dest='kk'):
         else:
             raise ValueError("Empty translation result")
     except Exception as e:
-        print(f"Error translating: {e}")
-        
         return "TRANSLATION_FAILED"
 
 def safe_translate(text):
     try:
         return translate_text(text)
     except Exception as e:
-        print(f"Failed to translate: {e}")
         return "TRANSLATION_FAILED"
 
 def translate_and_write_chunk(input_chunk, output_file, writer, error_log):
@@ -42,8 +39,9 @@ def translate_and_write_chunk(input_chunk, output_file, writer, error_log):
             error_log.write(f"Row content: {row.to_json()}\n\n")
     output_file.flush()
 
-def retranslate_failed_rows(input_file, output_file):
+def retranslate_failed_rows(input_file, original_file, output_file):
     df = pd.read_csv(input_file)
+    original_df = pd.read_csv(original_file)
 
     for col in ['instruction_kz', 'context_kz', 'response_kz']:
         mask = df[col] == 'TRANSLATION_FAILED'
@@ -52,7 +50,7 @@ def retranslate_failed_rows(input_file, output_file):
         print(f"Retranslating {len(failed_indices)} failed translations in column {col}")
 
         for idx in tqdm(failed_indices, total=len(failed_indices)):
-            original_text = df.loc[idx, col.replace('_kz', '')]
+            original_text = original_df.loc[idx, col.replace('_kz', '')]
             translated_text = safe_translate(original_text)
             df.loc[idx, col] = translated_text
 
@@ -78,9 +76,12 @@ if __name__ == "__main__":
                 translate_and_write_chunk(chunk, f_output, writer, error_log)
 
     print("Translation completed and saved.")
+
     input_file = INSTRUCTION_DATA_PATH + "dolly_kz.csv"
     output_file = INSTRUCTION_DATA_PATH + "dolly_kz_fixed.csv"
+    original_file = INSTRUCTION_DATA_PATH + "dolly.csv"
 
-    retranslate_failed_rows(input_file, output_file)
+    retranslate_failed_rows(input_file, original_file, output_file)
 
     print("Retranslation completed and saved.")
+    

@@ -7,4 +7,4 @@ tokenizer_path = TOKENIZER_PATH
 if not os.path.exists(tokenizer_path):
     os.makedirs(tokenizer_path)
     
-spm.SentencePieceTrainer.train(input=data_path+'kazakh_corpus.txt', model_prefix=TOKENIZER_PATH+'/m', vocab_size=1000)
+spm.SentencePieceTrainer.train(input=data_path+'kazakh_corpus.txt', model_prefix=TOKENIZER_PATH+'/m', vocab_size=16000)
