@@ -7,3 +7,15 @@ INSTRUCTION_DATA_PATH = ROOT_PATH + 'instruction_datasets/'
 MODEL_STATES_PATH = ROOT_PATH + 'model_states/'
 LOGS_PATH = ROOT_PATH + 'logs/'
 SPM_DATA = DATA_PATH + 'data_spm.txt'
+
+if not os.path.exists(DATA_PATH):
+    os.makedirs(DATA_PATH)
+if not os.path.exists(INSTRUCTION_DATA_PATH):
+    os.makedirs(INSTRUCTION_DATA_PATH)
+
+if not os.path.exists(TOKENIZER_PATH):
+    os.makedirs(TOKENIZER_PATH)
+if not os.path.exists(MODEL_STATES_PATH):
+    os.makedirs(MODEL_STATES_PATH)
+if not os.path.exists(LOGS_PATH):
+    os.makedirs(LOGS_PATH)
