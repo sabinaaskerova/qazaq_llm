@@ -1,7 +1,6 @@
 import torch
 from tokenizer import Tokenizer
 from project_config.data_config import *
-data_path = DATA_PATH
 
 def data_generator(file_path):
     with open(file_path, 'r', encoding='utf-8') as file:
@@ -13,7 +12,7 @@ tokenizer = Tokenizer(tokenizer_path+"m.model")
 
 tokenized_text = []
 
-for text in data_generator(data_path+'kazakh_corpus.txt'):
+for text in data_generator(SPM_DATA):
      tokenized = tokenizer.encode(text)
      tokenized_text.extend(tokenized)
 

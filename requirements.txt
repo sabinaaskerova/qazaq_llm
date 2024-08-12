@@ -5,6 +5,7 @@ transformers
 sentencepiece
 requests
 pandas
+nltk
 BeautifulSoup4
 huggingface_hub
 pandas

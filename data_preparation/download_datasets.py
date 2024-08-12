@@ -35,16 +35,8 @@ def chunk_extract_text_from_csv(csv_file_path, text_column_names, output_text_fi
                 text_file.writelines(chunk)
 
 if __name__ == '__main__':
-    csv_file_path = os.path.join(INSTRUCTION_DATA_PATH, 'dolly_kz.csv')
-    output_text_file = os.path.join(DATA_PATH, 'instruction_text.txt')
-    text_column_names = ['instruction_kz', 'context_kz', 'response_kz']
-
-    chunk_extract_text_from_csv(csv_file_path, text_column_names, output_text_file, chunk_size=1000)
-    
-    csv_file_path = os.path.join(INSTRUCTION_DATA_PATH, 'kaz_instruction.csv')
-    text_column_names = ['instruction', 'input', 'output']
+    ## turning CSV file data to plain text to use it for spm training
+    output_text_file = os.path.join(DATA_PATH, 'data_spm.txt')
+    csv_file_path = SPM_DATA
+    text_column_names = ['output']
     chunk_extract_text_from_csv(csv_file_path, text_column_names, output_text_file, chunk_size=1000)    
-
-    csv_file_path = os.path.join(INSTRUCTION_DATA_PATH, 'belebele.csv')
-    text_column_names = ['flores_passage', 'question', 'mc_answer1', 'mc_answer2', 'mc_answer3', 'mc_answer4']
-    chunk_extract_text_from_csv(csv_file_path, text_column_names, output_text_file, chunk_size=1000)
