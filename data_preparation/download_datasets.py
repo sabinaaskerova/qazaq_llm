@@ -36,6 +36,7 @@ def chunk_extract_text_from_csv(csv_file_path, text_column_names, output_text_fi
 
 if __name__ == '__main__':
     ## turning CSV file data to plain text to use it for spm training
+    download_instruction_datasets()
     csv_file_path = os.path.join(INSTRUCTION_DATA_PATH, 'kaz_instruction.csv')
     output_text_file = SPM_DATA
     text_column_names = ['output']
