@@ -23,7 +23,7 @@ def download_instruction_datasets():
 def chunk_extract_text_from_csv(csv_file_path, text_column_names, output_text_file, chunk_size=1000):
     with open(csv_file_path, 'r', encoding='utf-8') as csv_file:
         reader = csv.DictReader(csv_file)
-        with open(output_text_file, 'a', encoding='utf-8') as text_file:
+        with open(output_text_file, 'w', encoding='utf-8') as text_file:
             chunk = []
             for i, row in enumerate(reader):
                 for text_column_name in text_column_names:
@@ -36,7 +36,7 @@ def chunk_extract_text_from_csv(csv_file_path, text_column_names, output_text_fi
 
 if __name__ == '__main__':
     ## turning CSV file data to plain text to use it for spm training
-    output_text_file = os.path.join(DATA_PATH, 'data_spm.txt')
-    csv_file_path = SPM_DATA
+    csv_file_path = os.path.join(INSTRUCTION_DATA_PATH, 'kaz_instruction.csv')
+    output_text_file = SPM_DATA
     text_column_names = ['output']
     chunk_extract_text_from_csv(csv_file_path, text_column_names, output_text_file, chunk_size=1000)    
