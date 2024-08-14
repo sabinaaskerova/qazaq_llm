@@ -19,6 +19,39 @@ class RMSNorm(nn.Module):
     def forward(self, x):
         return x / torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps) * self.scale
 
+# RoPE from RoFormer paper 
+class RotaryPositionalEncoding(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.d_model = config['d_model']
+        self.n_heads = config['n_heads']
+        self.head_dim = self.d_model // self.n_heads # for one head
+        self.max_len = config['n_positions']
+        self.rotary_emb = nn.Parameter(torch.randn(self.max_len, self.head_dim))
+
+    def compute_rotary_matrices(self, seq_len, theta = 10000):
+        assert self.d_model % 2 == 0, "d_model must be divisible by 2"
+        theta_series = torch.arange(0, self.d_model, 2).float()
+        values = 1 / (theta ** (theta_series / self.d_model))
+        positions = torch.arange(seq_len).float()
+        # seq_len x d_model/2 -> (seq_len, d_model/2)
+        frequencies = torch.outer(positions, values).float()
+        # (seq_len, d_model/2) -> (seq_len, d_model / 2)
+        self.complex_frequencies = torch.polar(frequencies)
+
+    # x is already a vector from division to heads in multi-head attention
+    def forward(self, x: torch.Tensor, seq_len):
+        # (batch_size, seq_len, n_heads, d_model) -> (seq_len, batch_size, n_heads, d_model / 2)
+        complex_x = torch.view_as_complex(x.float().reshape(*x.shape[:-1], -1, 2))
+        # (seq_len, d_model / 2) -> (1, seq_len, 1, d_model / 2)
+        self.complex_frequencies = self.complex_frequencies.unsqueeze(0).unsqueeze(2)
+        # (batch_size, seq_len, n_heads, d_model / 2) * (1, seq_len, 1, d_model / 2) -> (batch_size, seq_len, n_heads, d_model / 2)
+        x_rotated = complex_x * self.complex_frequencies
+        # (batch_size, seq_len, n_heads, d_model / 2) -> (batch_size, seq_len, n_heads, d_model / 2, 2)
+        x_rotated = torch.view_as_real(x_rotated)
+        # (batch_size, seq_len, n_heads, d_model / 2, 2) -> (batch_size, seq_len, n_heads, d_model)
+        x_rotated = x_rotated.reshape(*x.shape)
+        return x_rotated.type_as(x)
 
 # Relative Positional Encoding from "Self-Attention with Relative Position Representations" paper
 class RelativePositionalEncoding(nn.Module):
