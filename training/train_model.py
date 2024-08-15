@@ -41,14 +41,11 @@ print(f"Number of batches: {len(train_loader)}")
 print(f"Number of samples: {len(train_loader) * batch_size}")
 print(f"Batch size: {batch_size}")
 config = {
-    "d_model": 512,
+    "n_embd": 512,
     "eps": 1e-6,
-    "n_queries": 128,
-    "n_keys": 128,
-    "n_values": 128,
     "n_heads": 8,
     "n_layers": 6,
-    "n_positions": 1000,
+    "max_seq_length": 10000,
     "vocab_size": vocab_size
 }
 
@@ -59,7 +56,7 @@ criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model.to(device)
+# model.to(device)
 
 checkpoint_interval = 1000
 
@@ -78,7 +75,7 @@ for epoch in range(num_epochs):
     total_loss = 0
     for batch_idx, (inputs, targets) in enumerate(train_loader):
         inputs = inputs.unsqueeze(0)
-        inputs, targets = inputs.to(device), targets.to(device)
+        # inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
         
         outputs = model(inputs)
@@ -126,7 +123,8 @@ print(f"Model and optimizer state saved to {model_save_path} and {optimizer_save
 
 model.eval()
 
-start_tokens = tensor_text[0][:20].squeeze(0).unsqueeze(0).to(device)
+# start_tokens = tensor_text[0][:20].squeeze(0).unsqueeze(0).to(device)
+start_tokens = tensor_text[0][:20].squeeze(0).unsqueeze(0)
 generated_text = model.generate(start_tokens, max_new_tokens=100, temperature=1.0)
 print(generated_text)
 print(tokenizer.decode(generated_text.tolist()[0]))
