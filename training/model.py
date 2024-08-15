@@ -19,6 +19,17 @@ class RMSNorm(nn.Module):
     def forward(self, x):
         return x / torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps) * self.scale
 
+def compute_rotary_matrices(seq_len, head_dim, device:str, theta = 10000):
+    assert head_dim % 2 == 0, "head_dim must be divisible by 2"
+    theta_series = torch.arange(0, head_dim, 2).float()
+    values = 1 / (theta ** (theta_series / head_dim)).to(device)
+    positions = torch.arange(seq_len, device=device).float()
+    # seq_len x head_dim/2 -> (seq_len, head_dim/2)
+    frequencies = torch.outer(positions, values).float()
+    # (seq_len, head_dim/2) -> (seq_len, head_dim / 2)
+    complex_frequencies = torch.polar(torch.ones_like(frequencies), frequencies)
+    return complex_frequencies
+
 # RoPE from RoFormer paper 
 class RotaryPositionalEncoding(nn.Module):
     def __init__(self, config):
@@ -27,23 +38,12 @@ class RotaryPositionalEncoding(nn.Module):
         self.n_heads = config['n_heads']
         self.head_dim = self.n_embd // self.n_heads # for one head, 1024/8 = 128
         self.max_len = config['max_seq_length']
-        self.rotary_emb = nn.Parameter(torch.randn(self.max_len, self.head_dim))
-        
-
-    def compute_rotary_matrices(self, seq_len, theta = 10000):
-        assert self.head_dim % 2 == 0, "head_dim must be divisible by 2"
-        theta_series = torch.arange(0, self.head_dim, 2).float()
-        values = 1 / (theta ** (theta_series / self.head_dim))
-        positions = torch.arange(seq_len).float()
-        # seq_len x head_dim/2 -> (seq_len, head_dim/2)
-        frequencies = torch.outer(positions, values).float()
-        # (seq_len, head_dim/2) -> (seq_len, head_dim / 2)
-        self.complex_frequencies = torch.polar(torch.ones_like(frequencies), frequencies)
+        self.device = config['device']
 
     # x is already a vector from division to heads in multi-head attention
     def forward(self, x: torch.Tensor):
         seq_len = x.size(1)
-        self.compute_rotary_matrices(seq_len=seq_len)
+        self.complex_frequencies = compute_rotary_matrices(seq_len=seq_len, head_dim=self.head_dim, device=self.device).to(self.device)
         # (batch_size, seq_len, n_heads, head_dim) -> (seq_len, batch_size, n_heads, head_dim / 2)
         complex_x = torch.view_as_complex(x.float().reshape(*x.shape[:-1], -1, 2))
         # (seq_len, head_dim / 2) -> (1, seq_len, 1, head_dim / 2)
@@ -54,7 +54,7 @@ class RotaryPositionalEncoding(nn.Module):
         x_rotated = torch.view_as_real(x_rotated)
         # (batch_size, seq_len, n_heads, head_dim / 2, 2) -> (batch_size, seq_len, n_heads, head_dim)
         x_rotated = x_rotated.reshape(*x.shape)
-        return x_rotated.type_as(x)
+        return x_rotated.type_as(x).to(self.device)
 
 
 class MultiHeadAttention(nn.Module):
@@ -71,11 +71,7 @@ class MultiHeadAttention(nn.Module):
 
     def forward(self, x):
         batch_size, seq_len, _ = x.size()
-        # print("batch_size", batch_size)
-        # print("seq_len", seq_len)
-        # print("self.n_heads", self.n_heads)
-        # print("self.head_dim", self.head_dim)
-        
+
         q = self.query(x).view(batch_size, seq_len, self.n_heads, self.head_dim) # we project the queries, keys, and values into n_heads
         k = self.key(x).view(batch_size, seq_len, self.n_heads, self.head_dim)
         v = self.value(x).view(batch_size, seq_len, self.n_heads, self.head_dim)
@@ -127,6 +123,7 @@ class LanguageModel(nn.Module):
         self.vocab_size = config['vocab_size']
         self.n_layers = config['n_layers']
         self.seq_len = config['max_seq_length']
+        self.device = config['device']
 
         self.embedding = nn.Embedding(self.vocab_size, self.n_embd)
         self.rms_norm = RMSNorm(config)
@@ -137,7 +134,7 @@ class LanguageModel(nn.Module):
             self.blocks.append(TransformerBlock(config))
     
     def forward(self, x):
-        x = self.embedding(x)
+        x = self.embedding(x).to(self.device)
         
         for block in self.blocks:
             x = block(x)
@@ -150,7 +147,8 @@ class LanguageModel(nn.Module):
         generated_tokens = []
 
         for _ in range(max_new_tokens):
-            idx_cond = idx if idx.size(1) <= self.seq_len else idx[:, -self.seq_len:]
+            idx_cond = idx if idx.size(1) <= self.seq_len else idx[:, -self.seq_len:].to(self.device)
+
             logits = self(idx_cond)
             logits = logits[:, -1, :] / temperature
 
@@ -171,32 +169,32 @@ class LanguageModel(nn.Module):
 
 
 if __name__ == "__main__":
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     tokenizer_path = TOKENIZER_PATH
-    num_unique_tokens = torch.load(tokenizer_path+"num_unique_tokens.pt")
-    tensor_text = torch.load(tokenizer_path+"tensor_text.pt")
+    num_unique_tokens = torch.load(tokenizer_path+"num_unique_tokens.pt", map_location=device)
+    tensor_text = torch.load(tokenizer_path+"tensor_text.pt", map_location=device)
+
     tokenizer = Tokenizer(tokenizer_path+"m.model")
 
     test_tokens = tensor_text[0, :1]
-    tensor_test_tokens = test_tokens.clone().detach().unsqueeze(0)
+    tensor_test_tokens = test_tokens.clone().detach().unsqueeze(0).to(device)
 
-    # print("tensor_test_tokens", tensor_test_tokens)
     print("test_tokens", test_tokens)
-    # print("tensor_text.shape", tensor_text.shape)
     print("tensor_test_tokens.shape", tensor_test_tokens.shape)
 
-   
     config = {
         "n_embd":  1024, # embedding size, number of features in the input, output
         "eps": 1e-6, # epsilon value for normalization
         "n_heads": 8, # n_embd should be divisible by n_heads
         "n_layers": 6,
         "max_seq_length": 10000,
-        "vocab_size": num_unique_tokens
+        "vocab_size": num_unique_tokens,
+        "device" : device
         # d_k, d_v, d_q = n_embd // n_heads
     }
 
-    model = LanguageModel(config)
+    model = LanguageModel(config).to(config['device'])
     model.eval()
     print(tensor_test_tokens.size())
 

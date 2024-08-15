@@ -8,12 +8,12 @@ import sentencepiece as spm
 from project_config.data_config import *
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 tokenizer_path = TOKENIZER_PATH
-# tokenizer = Tokenizer(tokenizer_path+"m.model")
 tokenizer = spm.SentencePieceProcessor()
 tokenizer.Load(tokenizer_path + "m.model")
-tensor_text = torch.load(tokenizer_path+"tensor_text.pt")
+tensor_text = torch.load(tokenizer_path+"tensor_text.pt", map_location=device)
 
 vocab_size = tokenizer.get_piece_size()
 vocab_tokens = [tokenizer.id_to_piece(i) for i in range(vocab_size)]
@@ -46,17 +46,14 @@ config = {
     "n_heads": 8,
     "n_layers": 6,
     "max_seq_length": 10000,
-    "vocab_size": vocab_size
+    "vocab_size": vocab_size,
+    "device": device
 }
 
 model = LanguageModel(config)
-
 criterion = nn.CrossEntropyLoss()
-
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-# model.to(device)
+model.to(device)
 
 checkpoint_interval = 1000
 
@@ -75,7 +72,7 @@ for epoch in range(num_epochs):
     total_loss = 0
     for batch_idx, (inputs, targets) in enumerate(train_loader):
         inputs = inputs.unsqueeze(0)
-        # inputs, targets = inputs.to(device), targets.to(device)
+        inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
         
         outputs = model(inputs)
@@ -122,9 +119,7 @@ torch.save(optimizer.state_dict(), optimizer_save_path)
 print(f"Model and optimizer state saved to {model_save_path} and {optimizer_save_path}, respectively.")
 
 model.eval()
-
-# start_tokens = tensor_text[0][:20].squeeze(0).unsqueeze(0).to(device)
-start_tokens = tensor_text[0][:20].squeeze(0).unsqueeze(0)
+start_tokens = tensor_text[0][:20].squeeze(0).unsqueeze(0).to(device)
 generated_text = model.generate(start_tokens, max_new_tokens=100, temperature=1.0)
 print(generated_text)
 print(tokenizer.decode(generated_text.tolist()[0]))
