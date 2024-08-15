@@ -28,6 +28,9 @@ def compute_rotary_matrices(seq_len, head_dim, device:str, theta = 10000):
     frequencies = torch.outer(positions, values).float()
     # (seq_len, head_dim/2) -> (seq_len, head_dim / 2)
     complex_frequencies = torch.polar(torch.ones_like(frequencies), frequencies)
+    # (seq_len, head_dim / 2) -> (1, seq_len, 1, head_dim / 2)
+    complex_frequencies = complex_frequencies.unsqueeze(0).unsqueeze(2)
+    print("calculated complex frequencies")
     return complex_frequencies
 
 # RoPE from RoFormer paper 
@@ -39,17 +42,16 @@ class RotaryPositionalEncoding(nn.Module):
         self.head_dim = self.n_embd // self.n_heads # for one head, 1024/8 = 128
         self.max_len = config['max_seq_length']
         self.device = config['device']
+        self.complex_frequencies = compute_rotary_matrices(self.max_len * 2, self.head_dim, self.device)
 
     # x is already a vector from division to heads in multi-head attention
     def forward(self, x: torch.Tensor):
         seq_len = x.size(1)
-        self.complex_frequencies = compute_rotary_matrices(seq_len=seq_len, head_dim=self.head_dim, device=self.device).to(self.device)
+        complex_frequencies = self.complex_frequencies[:, :seq_len, :, :]
         # (batch_size, seq_len, n_heads, head_dim) -> (seq_len, batch_size, n_heads, head_dim / 2)
         complex_x = torch.view_as_complex(x.float().reshape(*x.shape[:-1], -1, 2))
-        # (seq_len, head_dim / 2) -> (1, seq_len, 1, head_dim / 2)
-        self.complex_frequencies = self.complex_frequencies.unsqueeze(0).unsqueeze(2)
         # (batch_size, seq_len, n_heads, head_dim / 2) * (1, seq_len, 1, head_dim / 2) -> (batch_size, seq_len, n_heads, head_dim / 2)
-        x_rotated = complex_x * self.complex_frequencies
+        x_rotated = complex_x * complex_frequencies
         # (batch_size, seq_len, n_heads, head_dim / 2) -> (batch_size, seq_len, n_heads, head_dim / 2, 2)
         x_rotated = torch.view_as_real(x_rotated)
         # (batch_size, seq_len, n_heads, head_dim / 2, 2) -> (batch_size, seq_len, n_heads, head_dim)
@@ -122,8 +124,9 @@ class LanguageModel(nn.Module):
         self.n_embd = config['n_embd']
         self.vocab_size = config['vocab_size']
         self.n_layers = config['n_layers']
-        self.seq_len = config['max_seq_length']
+        self.max_seq_len = config['max_seq_length']
         self.device = config['device']
+        self.n_heads = config['n_heads']
 
         self.embedding = nn.Embedding(self.vocab_size, self.n_embd)
         self.rms_norm = RMSNorm(config)
@@ -132,6 +135,9 @@ class LanguageModel(nn.Module):
 
         for _ in range(self.n_layers):
             self.blocks.append(TransformerBlock(config))
+
+        # self.freqs_complex = compute_rotary_matrices(self.max_seq_len * 2, self.n_embd//self.n_heads, device=self.device).to(self.device)
+
     
     def forward(self, x):
         x = self.embedding(x).to(self.device)
@@ -147,7 +153,7 @@ class LanguageModel(nn.Module):
         generated_tokens = []
 
         for _ in range(max_new_tokens):
-            idx_cond = idx if idx.size(1) <= self.seq_len else idx[:, -self.seq_len:].to(self.device)
+            idx_cond = idx if idx.size(1) <= self.max_seq_len else idx[:, -self.max_seq_len:].to(self.device)
 
             logits = self(idx_cond)
             logits = logits[:, -1, :] / temperature
