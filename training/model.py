@@ -4,12 +4,11 @@ from torch.nn import functional as F
 import math
 from tokenization.tokenizer import Tokenizer
 from project_config.data_config import *
-# Swish-Gated Linear Unit from "GLU Variants Improve Transformer" paper
+
 class SwiGLU(nn.Module):
     def forward(self, x):
         return x * torch.sigmoid(x) + x
 
-# "Root Mean Square Layer Normalization" paper
 class RMSNorm(nn.Module): 
     def __init__(self, config):
         super().__init__()
@@ -33,7 +32,7 @@ def compute_rotary_matrices(seq_len, head_dim, device:str, theta = 10000):
     print("calculated complex frequencies")
     return complex_frequencies
 
-# RoPE from RoFormer paper 
+
 class RotaryPositionalEncoding(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -42,12 +41,11 @@ class RotaryPositionalEncoding(nn.Module):
         self.head_dim = self.n_embd // self.n_heads # for one head, 1024/8 = 128
         self.max_len = config['max_seq_length']
         self.device = config['device']
-        self.complex_frequencies = compute_rotary_matrices(self.max_len * 2, self.head_dim, self.device)
 
     # x is already a vector from division to heads in multi-head attention
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, freqs_complex):
         seq_len = x.size(1)
-        complex_frequencies = self.complex_frequencies[:, :seq_len, :, :]
+        complex_frequencies = freqs_complex[:, :seq_len, :, :]
         # (batch_size, seq_len, n_heads, head_dim) -> (seq_len, batch_size, n_heads, head_dim / 2)
         complex_x = torch.view_as_complex(x.float().reshape(*x.shape[:-1], -1, 2))
         # (batch_size, seq_len, n_heads, head_dim / 2) * (1, seq_len, 1, head_dim / 2) -> (batch_size, seq_len, n_heads, head_dim / 2)
@@ -71,14 +69,14 @@ class MultiHeadAttention(nn.Module):
         self.out = nn.Linear(self.n_embd, self.n_embd)
         self.rotary_positional_encoding = RotaryPositionalEncoding(config)
 
-    def forward(self, x):
+    def forward(self, x, freqs_complex):
         batch_size, seq_len, _ = x.size()
 
         q = self.query(x).view(batch_size, seq_len, self.n_heads, self.head_dim) # we project the queries, keys, and values into n_heads
         k = self.key(x).view(batch_size, seq_len, self.n_heads, self.head_dim)
         v = self.value(x).view(batch_size, seq_len, self.n_heads, self.head_dim)
-        q = self.rotary_positional_encoding(q)
-        k = self.rotary_positional_encoding(k)
+        q = self.rotary_positional_encoding(q, freqs_complex)
+        k = self.rotary_positional_encoding(k, freqs_complex)
 
         qk = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
 
@@ -109,9 +107,9 @@ class TransformerBlock(nn.Module):
         self.feed_forward = FeedForward(config)
         self.rms_norm = RMSNorm(config)
     
-    def forward(self, x):
+    def forward(self, x, freqs_complex):
         x_norm = self.rms_norm(x) # first normalization
-        x = self.multi_head_attention(x_norm) + x
+        x = self.multi_head_attention(x_norm, freqs_complex) + x
         x_norm = self.rms_norm(x) # second normalization
         x = self.feed_forward(x_norm) + x
         return x
@@ -136,14 +134,14 @@ class LanguageModel(nn.Module):
         for _ in range(self.n_layers):
             self.blocks.append(TransformerBlock(config))
 
-        # self.freqs_complex = compute_rotary_matrices(self.max_seq_len * 2, self.n_embd//self.n_heads, device=self.device).to(self.device)
+        self.freqs_complex = compute_rotary_matrices(self.max_seq_len * 2, self.n_embd//self.n_heads, device=self.device).to(self.device)
 
     
     def forward(self, x):
         x = self.embedding(x).to(self.device)
         
         for block in self.blocks:
-            x = block(x)
+            x = block(x, self.freqs_complex)
         x = self.rms_norm(x)
         x = self.out(x)
         return x
