@@ -5,10 +5,6 @@ import math
 from tokenization.tokenizer import Tokenizer
 from project_config.data_config import *
 
-class SwiGLU(nn.Module):
-    def forward(self, x):
-        return x * torch.sigmoid(x) + x
-
 class RMSNorm(nn.Module): 
     def __init__(self, config):
         super().__init__()
@@ -88,8 +84,8 @@ class Attention(nn.Module):
         k = self.rotary_positional_encoding(k, freqs_complex)   
 
         # storing keys and values in cache
-        self.k_cache[batch_size:, start_pos:start_pos+seq_len] = k
-        self.v_cache[batch_size:, start_pos:start_pos+seq_len] = v
+        self.k_cache[:batch_size, start_pos:start_pos+seq_len] = k
+        self.v_cache[:batch_size, start_pos:start_pos+seq_len] = v
 
         keys = self.k_cache[:batch_size, : start_pos + seq_len].to(self.device)
         values = self.v_cache[:batch_size, : start_pos + seq_len].to(self.device)
@@ -119,14 +115,17 @@ class Attention(nn.Module):
 class FeedForward(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
-        self.fc1 = nn.Linear(config['n_embd'], 4096)
-        self.activation = SwiGLU()
-        self.fc2 = nn.Linear(4096, config['n_embd'])
-    
-    def forward(self, x):
-        x = self.activation(self.fc1(x))
-        x = self.fc2(x)
-        
+
+        self.hidden = int(2 * 4 * config['n_embd'] / 3)
+        self.hidden = config['multiple'] * ((self.hidden + config['multiple'] - 1) // config['multiple'])
+        self.w1 = nn.Linear(config['n_embd'], self.hidden, bias=False)
+        self.w2 = nn.Linear(self.hidden, config['n_embd'], bias=False)
+        self.w3 = nn.Linear(config['n_embd'], self.hidden, bias=False)
+
+    def forward(self, x:torch.Tensor):
+        swish_value = F.silu(self.w1(x))
+        x = swish_value + self.w3(x)
+        x = self.w2(x)
         return x
 
 class TransformerBlock(nn.Module):
@@ -136,7 +135,7 @@ class TransformerBlock(nn.Module):
         self.feed_forward = FeedForward(config)
         self.rms_norm = RMSNorm(config)
     
-    def forward(self, x, start_pos, freqs_complex):
+    def forward(self, x:torch.Tensor, start_pos, freqs_complex):
         x_norm = self.rms_norm(x) # first normalization
         x = self.attention(x_norm, start_pos, freqs_complex) + x
         x_norm = self.rms_norm(x) # second normalization
@@ -166,7 +165,7 @@ class LanguageModel(nn.Module):
         self.freqs_complex = compute_rotary_matrices(self.max_seq_len * 2, self.n_embd//self.n_heads, device=self.device).to(self.device)
 
     
-    def forward(self, x, start_pos):
+    def forward(self, x:torch.Tensor, start_pos):
         x = self.embedding(x).to(self.device)
         
         for block in self.blocks:
@@ -175,6 +174,7 @@ class LanguageModel(nn.Module):
         x = self.out(x)
         return x
 
+    # assuming idx is on the correct device
     @torch.no_grad()
     def generate(self, idx, max_new_tokens=50, temperature=1.0, do_sample=True, top_k=None):
         generated_tokens = []
@@ -225,7 +225,8 @@ if __name__ == "__main__":
         "max_seq_length": 1000,
         "vocab_size": num_unique_tokens,
         "max_batch_size": 64,
-        "device" : device
+        "device" : device,
+        "multiple" : 256 # for hidden layer in FeedForward
         # d_k, d_v, d_q = n_embd // n_heads
     }
 
