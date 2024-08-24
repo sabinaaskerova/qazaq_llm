@@ -29,7 +29,6 @@ def compute_rotary_matrices(seq_len, head_dim, device:str, theta = 10000):
     complex_frequencies = torch.polar(torch.ones_like(frequencies), frequencies)
     # (seq_len, head_dim / 2) -> (1, seq_len, 1, head_dim / 2)
     complex_frequencies = complex_frequencies.unsqueeze(0).unsqueeze(2)
-    print("calculated complex frequencies")
     return complex_frequencies
 
 
@@ -45,7 +44,7 @@ class RotaryPositionalEncoding(nn.Module):
     # x is already a vector from division to heads in multi-head attention
     def forward(self, x: torch.Tensor, freqs_complex):
         seq_len = x.size(1)
-        complex_frequencies = freqs_complex[:, :seq_len, :, :]
+        complex_frequencies = freqs_complex[:, :seq_len, :, :].to(self.device)
         # (batch_size, seq_len, n_heads, head_dim) -> (seq_len, batch_size, n_heads, head_dim / 2)
         complex_x = torch.view_as_complex(x.float().reshape(*x.shape[:-1], -1, 2))
         # (batch_size, seq_len, n_heads, head_dim / 2) * (1, seq_len, 1, head_dim / 2) -> (batch_size, seq_len, n_heads, head_dim / 2)
@@ -57,36 +56,66 @@ class RotaryPositionalEncoding(nn.Module):
         return x_rotated.type_as(x).to(self.device)
 
 
-class MultiHeadAttention(nn.Module):
+class Attention(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
         self.n_embd = config['n_embd']
+        self.n_kv_heads = config['n_kv_heads'] if 'n_kv_heads' in config else config['n_heads']
         self.n_heads = config['n_heads']
-        self.head_dim = self.n_embd // self.n_heads # d_k = d_v = d_q = n_embd // n_heads
-        self.query = nn.Linear(self.n_embd, self.n_embd) 
-        self.key = nn.Linear(self.n_embd, self.n_embd)
-        self.value = nn.Linear(self.n_embd, self.n_embd)
-        self.out = nn.Linear(self.n_embd, self.n_embd)
+        self.head_dim = self.n_embd // self.n_heads
+        self.max_batch_size = config['max_batch_size']
+        self.max_seq_len = config['max_seq_length']
+        self.device = config['device']
+
+        self.wq = nn.Linear(self.n_embd, self.head_dim * self.n_heads, bias=False)
+        self.wk = nn.Linear(self.n_embd, self.head_dim * self.n_kv_heads, bias=False)
+        self.wv = nn.Linear(self.n_embd, self.head_dim * self.n_kv_heads, bias=False)
+        self.out = nn.Linear(self.head_dim * self.n_heads, self.n_embd)
         self.rotary_positional_encoding = RotaryPositionalEncoding(config)
 
-    def forward(self, x, freqs_complex):
-        batch_size, seq_len, _ = x.size()
+        self.k_cache = torch.zeros((self.max_batch_size, self.max_seq_len, self.n_kv_heads, self.head_dim))
+        self.v_cache = torch.zeros((self.max_batch_size, self.max_seq_len, self.n_kv_heads, self.head_dim))
 
-        q = self.query(x).view(batch_size, seq_len, self.n_heads, self.head_dim) # we project the queries, keys, and values into n_heads
-        k = self.key(x).view(batch_size, seq_len, self.n_heads, self.head_dim)
-        v = self.value(x).view(batch_size, seq_len, self.n_heads, self.head_dim)
+    def forward(self, x: torch.Tensor, start_pos, freqs_complex):
+        batch_size, seq_len, _ = x.size() 
+
+        # (batch_size, seq_len, n_heads * head_fim) -> (batch_size, seq_len, n_heads, head_dim)
+        q = self.wq(x).view(batch_size, seq_len, self.n_heads, self.head_dim).to(self.device)
+        k = self.wk(x).view(batch_size, seq_len, self.n_kv_heads, self.head_dim).to(self.device)
+        v = self.wv(x).view(batch_size, seq_len, self.n_kv_heads, self.head_dim).to(self.device)
+
         q = self.rotary_positional_encoding(q, freqs_complex)
-        k = self.rotary_positional_encoding(k, freqs_complex)
+        k = self.rotary_positional_encoding(k, freqs_complex)   
 
-        qk = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
+        # storing keys and values in cache
+        self.k_cache[batch_size:, start_pos:start_pos+seq_len] = k
+        self.v_cache[batch_size:, start_pos:start_pos+seq_len] = v
 
-        att = F.softmax(qk, dim=-1)
-        att_output = torch.matmul(att, v)
+        keys = self.k_cache[:batch_size, : start_pos + seq_len].to(self.device)
+        values = self.v_cache[:batch_size, : start_pos + seq_len].to(self.device)
+
+        if self.n_heads // self.n_kv_heads > 1:
+            keys = (keys[:, :, :, None, :]
+                    .expand(batch_size, seq_len, self.n_kv_heads, self.n_heads//self.n_kv_heads, self.head_dim)
+                    .reshape(batch_size, seq_len, self.n_kv_heads * (self.n_heads//self.n_kv_heads, self.head_dim), self.head_dim)
+                    .to(self.device))
+            values = (values[:, :, :, None, :]
+                    .expand(batch_size, seq_len, self.n_kv_heads, self.n_heads//self.n_kv_heads, self.head_dim)
+                    .reshape(batch_size, seq_len, self.n_kv_heads * (self.n_heads//self.n_kv_heads, self.head_dim), self.head_dim)
+                    .to(self.device))
         
+        q = q.transpose(1,2)
+        keys = keys.transpose(1,2)
+        values = values.transpose(1,2)
+
+        qk = torch.matmul(q, keys.transpose(2, 3)) / math.sqrt(self.head_dim)
+        att = F.softmax(qk, dim=-1)
+        att_output = torch.matmul(att, values)
         att_output = att_output.transpose(1, 2).contiguous().view(batch_size, seq_len, -1)
         x = self.out(att_output)
+        
         return x
-    
+
 class FeedForward(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
@@ -103,18 +132,17 @@ class FeedForward(nn.Module):
 class TransformerBlock(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
-        self.multi_head_attention = MultiHeadAttention(config)
+        self.attention = Attention(config)
         self.feed_forward = FeedForward(config)
         self.rms_norm = RMSNorm(config)
     
-    def forward(self, x, freqs_complex):
+    def forward(self, x, start_pos, freqs_complex):
         x_norm = self.rms_norm(x) # first normalization
-        x = self.multi_head_attention(x_norm, freqs_complex) + x
+        x = self.attention(x_norm, start_pos, freqs_complex) + x
         x_norm = self.rms_norm(x) # second normalization
         x = self.feed_forward(x_norm) + x
         return x
     
-
     
 class LanguageModel(nn.Module):
     def __init__(self, config) -> None:
@@ -125,6 +153,7 @@ class LanguageModel(nn.Module):
         self.max_seq_len = config['max_seq_length']
         self.device = config['device']
         self.n_heads = config['n_heads']
+        self.max_batch_size = config['max_batch_size']
 
         self.embedding = nn.Embedding(self.vocab_size, self.n_embd)
         self.rms_norm = RMSNorm(config)
@@ -137,11 +166,11 @@ class LanguageModel(nn.Module):
         self.freqs_complex = compute_rotary_matrices(self.max_seq_len * 2, self.n_embd//self.n_heads, device=self.device).to(self.device)
 
     
-    def forward(self, x):
+    def forward(self, x, start_pos):
         x = self.embedding(x).to(self.device)
         
         for block in self.blocks:
-            x = block(x, self.freqs_complex)
+            x = block(x, start_pos, self.freqs_complex)
         x = self.rms_norm(x)
         x = self.out(x)
         return x
@@ -152,8 +181,9 @@ class LanguageModel(nn.Module):
 
         for _ in range(max_new_tokens):
             idx_cond = idx if idx.size(1) <= self.max_seq_len else idx[:, -self.max_seq_len:].to(self.device)
+            start_pos = idx_cond.size(1) - 1
 
-            logits = self(idx_cond)
+            logits = self(idx_cond, start_pos)
             logits = logits[:, -1, :] / temperature
 
             if top_k is not None:
@@ -192,8 +222,9 @@ if __name__ == "__main__":
         "eps": 1e-6, # epsilon value for normalization
         "n_heads": 8, # n_embd should be divisible by n_heads
         "n_layers": 6,
-        "max_seq_length": 10000,
+        "max_seq_length": 1000,
         "vocab_size": num_unique_tokens,
+        "max_batch_size": 64,
         "device" : device
         # d_k, d_v, d_q = n_embd // n_heads
     }
