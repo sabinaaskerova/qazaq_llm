@@ -1,6 +1,5 @@
 import torch
 from model import LanguageModel
-from tokenization.tokenizer import Tokenizer
 import torch.nn as nn
 torch.autograd.set_detect_anomaly(True)
 import os
@@ -35,25 +34,27 @@ train_size = len(dataset)
 print(f"Train size: {train_size}")
 train_dataset = dataset
 
-batch_size = 1024
+batch_size = 32
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 print(f"Number of batches: {len(train_loader)}")
 print(f"Number of samples: {len(train_loader) * batch_size}")
 print(f"Batch size: {batch_size}")
 config = {
-    "n_embd": 512,
+    "n_embd": 1024,
     "eps": 1e-6,
     "n_heads": 8,
     "n_layers": 6,
-    "max_seq_length": 10000,
+    "max_seq_length": 1000,
     "vocab_size": vocab_size,
-    "device": device
+    "max_batch_size": batch_size,
+    "device": device,
+    "multiple": 64
 }
 
-model = LanguageModel(config)
+model = LanguageModel(config).to(device)
+model.train()
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-model.to(device)
 
 checkpoint_interval = 1000
 
@@ -66,17 +67,20 @@ epochs_no_improve = 0
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=patience)
 
 # Training loop
+# Training loop
 num_epochs = 3
 for epoch in range(num_epochs):
     model.train()
     total_loss = 0
     for batch_idx, (inputs, targets) in enumerate(train_loader):
-        inputs = inputs.unsqueeze(0)
+        inputs = inputs.unsqueeze(0)  # Add batch dimension
         inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
         
-        outputs = model(inputs)
-        outputs = outputs.squeeze(0)
+        start_pos = 0  # Initialize start_pos to 0 for each new batch
+        
+        outputs = model(inputs, start_pos)  # Pass start_pos to the model
+        outputs = outputs.squeeze(0)  # Remove batch dimension
         loss = criterion(outputs, targets)
         loss.backward()
         optimizer.step()
@@ -88,7 +92,6 @@ for epoch in range(num_epochs):
         if (batch_idx + 1) % 10 == 0:
             print(f"Epoch {epoch+1}/{num_epochs}, Batch {batch_idx+1}/{len(train_loader)}, Batch Loss: {loss.item()}")
             
-
     average_loss = total_loss / len(train_loader)
     print(f"Epoch {epoch+1}/{num_epochs}, Average Loss: {average_loss}")
 
@@ -105,6 +108,7 @@ for epoch in range(num_epochs):
         if epochs_no_improve >= patience:
             print(f"Early stopping triggered after {epoch+1} epochs.")
             break
+
 
 languagemodel_path = MODEL_STATES_PATH
 if not os.path.exists(languagemodel_path):

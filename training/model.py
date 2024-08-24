@@ -63,43 +63,44 @@ class Attention(nn.Module):
         self.max_seq_len = config['max_seq_length']
         self.device = config['device']
 
-        self.wq = nn.Linear(self.n_embd, self.head_dim * self.n_heads, bias=False)
-        self.wk = nn.Linear(self.n_embd, self.head_dim * self.n_kv_heads, bias=False)
-        self.wv = nn.Linear(self.n_embd, self.head_dim * self.n_kv_heads, bias=False)
-        self.out = nn.Linear(self.head_dim * self.n_heads, self.n_embd)
-        self.rotary_positional_encoding = RotaryPositionalEncoding(config)
+        self.wq = nn.Linear(self.n_embd, self.head_dim * self.n_heads, bias=False).to(self.device)
+        self.wk = nn.Linear(self.n_embd, self.head_dim * self.n_kv_heads, bias=False).to(self.device)
+        self.wv = nn.Linear(self.n_embd, self.head_dim * self.n_kv_heads, bias=False).to(self.device)
+        self.out = nn.Linear(self.head_dim * self.n_heads, self.n_embd).to(self.device)
+        self.rotary_positional_encoding = RotaryPositionalEncoding(config).to(self.device)
 
-        self.k_cache = torch.zeros((self.max_batch_size, self.max_seq_len, self.n_kv_heads, self.head_dim))
-        self.v_cache = torch.zeros((self.max_batch_size, self.max_seq_len, self.n_kv_heads, self.head_dim))
+        self.k_cache = torch.zeros((self.max_batch_size, self.max_seq_len, self.n_kv_heads, self.head_dim), device=self.device)
+        self.v_cache = torch.zeros((self.max_batch_size, self.max_seq_len, self.n_kv_heads, self.head_dim), device=self.device)
+
 
     def forward(self, x: torch.Tensor, start_pos, freqs_complex):
         batch_size, seq_len, _ = x.size() 
 
         # (batch_size, seq_len, n_heads * head_fim) -> (batch_size, seq_len, n_heads, head_dim)
-        q = self.wq(x).view(batch_size, seq_len, self.n_heads, self.head_dim).to(self.device)
-        k = self.wk(x).view(batch_size, seq_len, self.n_kv_heads, self.head_dim).to(self.device)
-        v = self.wv(x).view(batch_size, seq_len, self.n_kv_heads, self.head_dim).to(self.device)
+        q = self.wq(x).view(batch_size, seq_len, self.n_heads, self.head_dim)
+        k = self.wk(x).view(batch_size, seq_len, self.n_kv_heads, self.head_dim)
+        v = self.wv(x).view(batch_size, seq_len, self.n_kv_heads, self.head_dim)
 
         q = self.rotary_positional_encoding(q, freqs_complex)
         k = self.rotary_positional_encoding(k, freqs_complex)   
 
-        # storing keys and values in cache
-        self.k_cache[:batch_size, start_pos:start_pos+seq_len] = k
-        self.v_cache[:batch_size, start_pos:start_pos+seq_len] = v
+        # storing keys and values in cache, detaching them from the graph 
+        self.k_cache[:batch_size, start_pos:start_pos+seq_len] = k.detach()
+        self.v_cache[:batch_size, start_pos:start_pos+seq_len] = v.detach()
 
-        keys = self.k_cache[:batch_size, : start_pos + seq_len].to(self.device)
-        values = self.v_cache[:batch_size, : start_pos + seq_len].to(self.device)
+        keys = self.k_cache[:batch_size, : start_pos + seq_len]
+        values = self.v_cache[:batch_size, : start_pos + seq_len]
 
         if self.n_heads // self.n_kv_heads > 1:
-            keys = (keys[:, :, :, None, :]
-                    .expand(batch_size, seq_len, self.n_kv_heads, self.n_heads//self.n_kv_heads, self.head_dim)
-                    .reshape(batch_size, seq_len, self.n_kv_heads * (self.n_heads//self.n_kv_heads, self.head_dim), self.head_dim)
-                    .to(self.device))
-            values = (values[:, :, :, None, :]
-                    .expand(batch_size, seq_len, self.n_kv_heads, self.n_heads//self.n_kv_heads, self.head_dim)
-                    .reshape(batch_size, seq_len, self.n_kv_heads * (self.n_heads//self.n_kv_heads, self.head_dim), self.head_dim)
-                    .to(self.device))
-        
+            # keys = (keys[:, :, :, None, :]
+            #         .expand(batch_size, seq_len, self.n_kv_heads, self.n_heads//self.n_kv_heads, self.head_dim)
+            #         .reshape(batch_size, seq_len, self.n_kv_heads * (self.n_heads//self.n_kv_heads, self.head_dim), self.head_dim))
+            # values = (values[:, :, :, None, :]
+            #         .expand(batch_size, seq_len, self.n_kv_heads, self.n_heads//self.n_kv_heads, self.head_dim)
+            #         .reshape(batch_size, seq_len, self.n_kv_heads * (self.n_heads//self.n_kv_heads, self.head_dim), self.head_dim))
+            keys = keys.expand(-1, -1, -1, self.n_heads // self.n_kv_heads, -1).reshape(batch_size, seq_len, self.n_heads, self.head_dim)
+            values = values.expand(-1, -1, -1, self.n_heads // self.n_kv_heads, -1).reshape(batch_size, seq_len, self.n_heads, self.head_dim)
+
         q = q.transpose(1,2)
         keys = keys.transpose(1,2)
         values = values.transpose(1,2)
