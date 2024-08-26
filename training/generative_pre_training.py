@@ -12,7 +12,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 tokenizer_path = TOKENIZER_PATH
 tokenizer = spm.SentencePieceProcessor()
 tokenizer.Load(tokenizer_path + "m.model")
-tensor_text = torch.load(tokenizer_path+"tensor_text.pt", map_location=device)
+tensor_text = torch.load(tokenizer_path+"tensor_text.pt", map_location=device) # we will pretrain the model on the same dataset as the tokenizer
 
 vocab_size = tokenizer.get_piece_size()
 vocab_tokens = [tokenizer.id_to_piece(i) for i in range(vocab_size)]
@@ -56,7 +56,7 @@ model.train()
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-checkpoint_interval = 1000
+checkpoint_interval = 30000 # save model every 30000 batches 
 
 # Early stopping parameters
 patience = 1
@@ -85,12 +85,12 @@ for epoch in range(num_epochs):
         optimizer.step()
         total_loss += loss.item()
 
-        if (batch_idx + 1) % checkpoint_interval == 0 or (batch_idx + 1) == len(train_loader):
-            torch.save(model.state_dict(), f'model_checkpoint_epoch{epoch+1}_batch{batch_idx+1}.pth')
+        # if (batch_idx + 1) % checkpoint_interval == 0 or (batch_idx + 1) == len(train_loader):
+        #     torch.save(model.state_dict(), f'model_checkpoint_epoch{epoch+1}_batch{batch_idx+1}.pth') # too much for my google drive memory TT
 
         if (batch_idx + 1) % 10 == 0:
             print(f"Epoch {epoch+1}/{num_epochs}, Batch {batch_idx+1}/{len(train_loader)}, Batch Loss: {loss.item()}")
-            
+    torch.save(model.state_dict(), f'model_checkpoint_epoch{epoch+1}.pth')  
     average_loss = total_loss / len(train_loader)
     print(f"Epoch {epoch+1}/{num_epochs}, Average Loss: {average_loss}")
 
