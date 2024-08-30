@@ -97,6 +97,15 @@ for epoch in range(num_epochs):
     # Learning rate scheduler step
     scheduler.step(average_loss)
     print(f"Current learning rate: {optimizer.param_groups[0]['lr']}")
+    model.eval()
+    start_tokens = tensor_text[0][:20].squeeze(0).unsqueeze(0).to(device)
+    generated_text = model.generate(start_tokens, max_new_tokens=400, temperature=0.5)
+    resulting_text = tokenizer.decode(generated_text.tolist()[0])
+    generated_text_path = GENERATED_TEXT_TEST
+    separator = "------------------------"
+    with open(generated_text_path, "a") as file:
+        file.write(f"\n{separator}\nEpoch {epoch+1}\n{resulting_text}\n")
+
 
     # Early stopping check
     if average_loss < best_loss:
@@ -121,8 +130,3 @@ torch.save(optimizer.state_dict(), optimizer_save_path)
 
 print(f"Model and optimizer state saved to {model_save_path} and {optimizer_save_path}, respectively.")
 
-model.eval()
-start_tokens = tensor_text[0][:20].squeeze(0).unsqueeze(0).to(device)
-generated_text = model.generate(start_tokens, max_new_tokens=100, temperature=1.0)
-print(generated_text)
-print(tokenizer.decode(generated_text.tolist()[0]))

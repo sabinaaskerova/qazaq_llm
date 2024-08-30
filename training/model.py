@@ -51,6 +51,36 @@ class RotaryPositionalEncoding(nn.Module):
         x_rotated = x_rotated.reshape(*x.shape)
         return x_rotated.type_as(x).to(self.device)
 
+# classic multihead self-attention
+class MultiHeadAttention(nn.Module):
+    def __init__(self, config) -> None:
+        super().__init__()
+        self.n_embd = config['n_embd']
+        self.n_heads = config['n_heads']
+        self.head_dim = self.n_embd // self.n_heads # d_k = d_v = d_q = n_embd // n_heads
+        self.query = nn.Linear(self.n_embd, self.n_embd) 
+        self.key = nn.Linear(self.n_embd, self.n_embd)
+        self.value = nn.Linear(self.n_embd, self.n_embd)
+        self.out = nn.Linear(self.n_embd, self.n_embd)
+        self.rotary_positional_encoding = RotaryPositionalEncoding(config)
+
+    def forward(self, x, freqs_complex):
+        batch_size, seq_len, _ = x.size()
+
+        q = self.query(x).view(batch_size, seq_len, self.n_heads, self.head_dim) # we project the queries, keys, and values into n_heads
+        k = self.key(x).view(batch_size, seq_len, self.n_heads, self.head_dim)
+        v = self.value(x).view(batch_size, seq_len, self.n_heads, self.head_dim)
+        q = self.rotary_positional_encoding(q, freqs_complex)
+        k = self.rotary_positional_encoding(k, freqs_complex)
+
+        qk = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
+
+        att = F.softmax(qk, dim=-1)
+        att_output = torch.matmul(att, v)
+        
+        att_output = att_output.transpose(1, 2).contiguous().view(batch_size, seq_len, -1)
+        x = self.out(att_output)
+        return x
 
 class Attention(nn.Module):
     def __init__(self, config) -> None:
@@ -132,13 +162,15 @@ class FeedForward(nn.Module):
 class TransformerBlock(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
-        self.attention = Attention(config)
+        # self.attention = Attention(config)
+        self.attention = MultiHeadAttention(config)
         self.feed_forward = FeedForward(config)
         self.rms_norm = RMSNorm(config)
     
     def forward(self, x:torch.Tensor, start_pos, freqs_complex):
         x_norm = self.rms_norm(x) # first normalization
-        x = self.attention(x_norm, start_pos, freqs_complex) + x
+        # x = self.attention(x_norm, start_pos, freqs_complex) + x
+        x = self.attention(x_norm, freqs_complex) + x
         x_norm = self.rms_norm(x) # second normalization
         x = self.feed_forward(x_norm) + x
         return x
@@ -212,7 +244,7 @@ if __name__ == "__main__":
 
     tokenizer = Tokenizer(tokenizer_path+"m.model")
 
-    test_tokens = tensor_text[0, :1]
+    test_tokens = tensor_text[0, :2]
     tensor_test_tokens = test_tokens.clone().detach().unsqueeze(0).to(device)
 
     print("test_tokens", test_tokens)
@@ -235,6 +267,6 @@ if __name__ == "__main__":
     model.eval()
     print(tensor_test_tokens.size())
 
-    generated_text = model.generate(tensor_test_tokens)
+    generated_text = model.generate(tensor_test_tokens, max_new_tokens=400, temperature=1.0)
     print(generated_text)
     print(tokenizer.decode(generated_text.tolist()))

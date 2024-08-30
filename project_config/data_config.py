@@ -7,6 +7,7 @@ INSTRUCTION_DATA_PATH = ROOT_PATH + 'instruction_datasets/'
 MODEL_STATES_PATH = ROOT_PATH + 'model_states/'
 LOGS_PATH = ROOT_PATH + 'logs/'
 SPM_DATA = DATA_PATH + 'data_spm.txt'
+GENERATED_TEXT_TEST = ROOT_PATH + 'generated_text_test.txt'
 
 if not os.path.exists(DATA_PATH):
     os.makedirs(DATA_PATH)
