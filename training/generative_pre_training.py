@@ -128,9 +128,11 @@ if not os.path.exists(languagemodel_path):
 
 model_save_path = languagemodel_path+"language_model_state_dict.pth"
 torch.save(model.state_dict(), model_save_path)
+torch.save(model.state_dict(), f'{COLAB_PATH}language_model_state_dict.pth')
 
 optimizer_save_path = languagemodel_path+"optimizer.pth"
 torch.save(optimizer.state_dict(), optimizer_save_path)
+torch.save(optimizer.state_dict(), f'{COLAB_PATH}optimizer.pth')
 
 print(f"Model and optimizer state saved to {model_save_path} and {optimizer_save_path}, respectively.")
 
