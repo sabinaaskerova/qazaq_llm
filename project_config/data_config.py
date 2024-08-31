@@ -20,5 +20,3 @@ if not os.path.exists(MODEL_STATES_PATH):
     os.makedirs(MODEL_STATES_PATH)
 if not os.path.exists(LOGS_PATH):
     os.makedirs(LOGS_PATH)
-if not os.path.exists(COLAB_PATH):
-    os.makedirs(COLAB_PATH)

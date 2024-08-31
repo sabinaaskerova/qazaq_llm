@@ -86,14 +86,16 @@ for epoch in range(num_epochs):
         total_loss += loss.item()
 
         if (batch_idx + 1) % checkpoint_interval == 0 or (batch_idx + 1) == len(train_loader):
-            torch.save(model.state_dict(), f'{MODEL_STATES_PATH}model_checkpoint_epoch{epoch+1}_batch{batch_idx+1}.pth') # too much for my google drive memory TT
-            torch.save(model.state_dict(), f'{COLAB_PATH}model_checkpoint_epoch{epoch+1}_batch{batch_idx+1}.pth')
+            torch.save(model.state_dict(), f'{MODEL_STATES_PATH}model_checkpoint_epoch{epoch+1}_batch{batch_idx+1}.pth')
+            if os.path.exists(COLAB_PATH):
+                torch.save(model.state_dict(), f'{COLAB_PATH}model_checkpoint_epoch{epoch+1}_batch{batch_idx+1}.pth')
 
 
         if (batch_idx + 1) % 10 == 0:
             print(f"Epoch {epoch+1}/{num_epochs}, Batch {batch_idx+1}/{len(train_loader)}, Batch Loss: {loss.item()}")
     torch.save(model.state_dict(), f'{MODEL_STATES_PATH}model_checkpoint_epoch{epoch+1}.pth')  
-    torch.save(model.state_dict(), f'{COLAB_PATH}model_checkpoint_epoch{epoch+1}.pth')
+    if os.path.exists(COLAB_PATH):
+        torch.save(model.state_dict(), f'{COLAB_PATH}model_checkpoint_epoch{epoch+1}.pth')
 
     average_loss = total_loss / len(train_loader)
     print(f"Epoch {epoch+1}/{num_epochs}, Average Loss: {average_loss}")
@@ -128,11 +130,13 @@ if not os.path.exists(languagemodel_path):
 
 model_save_path = languagemodel_path+"language_model_state_dict.pth"
 torch.save(model.state_dict(), model_save_path)
-torch.save(model.state_dict(), f'{COLAB_PATH}language_model_state_dict.pth')
+if os.path.exists(COLAB_PATH):
+    torch.save(model.state_dict(), f'{COLAB_PATH}language_model_state_dict.pth')
 
 optimizer_save_path = languagemodel_path+"optimizer.pth"
 torch.save(optimizer.state_dict(), optimizer_save_path)
-torch.save(optimizer.state_dict(), f'{COLAB_PATH}optimizer.pth')
+if os.path.exists(COLAB_PATH):
+    torch.save(optimizer.state_dict(), f'{COLAB_PATH}optimizer.pth')
 
 print(f"Model and optimizer state saved to {model_save_path} and {optimizer_save_path}, respectively.")
 
