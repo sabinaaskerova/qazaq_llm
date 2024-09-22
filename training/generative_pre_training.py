@@ -100,7 +100,7 @@ if model is None:
     model.train()
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
-    checkpoint_interval = 30000  # save model every 30000 batches
+    checkpoint_interval = 15000  # save model every n batches
 
 patience = 5 # Early stopping patience
 epochs_no_improve = 0
