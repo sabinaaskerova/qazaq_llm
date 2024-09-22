@@ -1,18 +1,20 @@
+import os
 import torch
 from model import LanguageModel
 import torch.nn as nn
 torch.autograd.set_detect_anomaly(True)
-import os
 import sentencepiece as spm
 from project_config.data_config import *
 
+################# Environment setup #################
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+################# Data preparation #################
 tokenizer_path = TOKENIZER_PATH
 tokenizer = spm.SentencePieceProcessor()
 tokenizer.Load(tokenizer_path + "m.model")
-tensor_text = torch.load(tokenizer_path+"tensor_text.pt", map_location=device) # we will pretrain the model on the same dataset as the tokenizer
+tensor_text = torch.load(tokenizer_path + "tensor_text.pt", map_location=device) # we will pretrain the model on the same dataset as the tokenizer
 
 vocab_size = tokenizer.get_piece_size()
 vocab_tokens = [tokenizer.id_to_piece(i) for i in range(vocab_size)]
@@ -39,6 +41,7 @@ train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
 print(f"Number of batches: {len(train_loader)}")
 print(f"Number of samples: {len(train_loader) * batch_size}")
 print(f"Batch size: {batch_size}")
+
 config = {
     "n_embd": 1024,
     "eps": 1e-6,
@@ -50,52 +53,87 @@ config = {
     "device": device,
     "multiple": 64
 }
-
+################# Model training #################
 model = LanguageModel(config).to(device)
 model.train()
 criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
-checkpoint_interval = 30000 # save model every 30000 batches 
+checkpoint_interval = 30000  # save model every 30000 batches
+patience = 5 # Early stopping patience
 
-# Early stopping parameters
-patience = 1
 best_loss = float('inf')
+
 epochs_no_improve = 0
 
 # Learning rate scheduler
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=patience)
 
-# Training loop
-num_epochs = 100
-for epoch in range(num_epochs):
+# Function to save checkpoints
+def save_checkpoint(model, optimizer, epoch, batch_idx, best_loss):
+    checkpoint_path = f'{MODEL_STATES_PATH}checkpoint_epoch{epoch}_batch{batch_idx}.pth'
+    checkpoint = {
+        'epoch': epoch,
+        'batch_idx': batch_idx,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'best_loss': best_loss
+    }
+    torch.save(checkpoint, checkpoint_path)
+    if os.path.exists(COLAB_PATH):
+        torch.save(checkpoint, f'{COLAB_PATH}checkpoint_epoch{epoch}_batch{batch_idx}.pth')
+    print(f'Checkpoint saved at {checkpoint_path}')
+
+# Load checkpoint if exists
+def load_checkpoint():
+    checkpoints = [f for f in os.listdir(MODEL_STATES_PATH) if f.startswith('checkpoint')]
+    if not checkpoints:
+        return None, 0, 0, float('inf')
+
+    latest_checkpoint = sorted(checkpoints, key=lambda x: int(x.split('_')[2].split('epoch')[1]))[-1]
+    checkpoint = torch.load(MODEL_STATES_PATH + latest_checkpoint, map_location=device)
+
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    epoch = checkpoint['epoch']
+    batch_idx = checkpoint['batch_idx']
+    best_loss = checkpoint['best_loss']
+    print(f'Resuming from checkpoint: {latest_checkpoint}')
+    return model, optimizer, epoch, batch_idx, best_loss
+
+# Attempt to resume from checkpoint
+model, optimizer, start_epoch, start_batch, best_loss = load_checkpoint()
+
+##################### Training loop
+num_epochs = 500
+for epoch in range(start_epoch, num_epochs):
     model.train()
     total_loss = 0
     for batch_idx, (inputs, targets) in enumerate(train_loader):
-        inputs = inputs.unsqueeze(0)  # Add batch dimension
+        # Skip batches if resuming
+        if epoch == start_epoch and batch_idx < start_batch:
+            continue
+
+        inputs = inputs.unsqueeze(0)  # add batch dimension
         inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
-        
+
         start_pos = 0  # Initialize start_pos to 0 for each new batch
-        
+
         outputs = model(inputs, start_pos)  # Pass start_pos to the model
-        outputs = outputs.squeeze(0)  # Remove batch dimension
+        outputs = outputs.squeeze(0)  # to remove batch dimension
         loss = criterion(outputs, targets)
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
 
         if (batch_idx + 1) % checkpoint_interval == 0 or (batch_idx + 1) == len(train_loader):
-            torch.save(model.state_dict(), f'{MODEL_STATES_PATH}model_checkpoint_epoch{epoch+1}_batch{batch_idx+1}.pth')
-            if os.path.exists(COLAB_PATH):
-                torch.save(model.state_dict(), f'{COLAB_PATH}model_checkpoint_epoch{epoch+1}_batch{batch_idx+1}.pth')
-
+            save_checkpoint(model, optimizer, epoch, batch_idx, best_loss)
 
         if (batch_idx + 1) % 10 == 0:
             print(f"Epoch {epoch+1}/{num_epochs}, Batch {batch_idx+1}/{len(train_loader)}, Batch Loss: {loss.item()}")
-    torch.save(model.state_dict(), f'{MODEL_STATES_PATH}model_checkpoint_epoch{epoch+1}.pth')  
-    if os.path.exists(COLAB_PATH):
-        torch.save(model.state_dict(), f'{COLAB_PATH}model_checkpoint_epoch{epoch+1}.pth')
+
+    save_checkpoint(model, optimizer, epoch, batch_idx, best_loss)
 
     average_loss = total_loss / len(train_loader)
     print(f"Epoch {epoch+1}/{num_epochs}, Average Loss: {average_loss}")
@@ -103,6 +141,7 @@ for epoch in range(num_epochs):
     # Learning rate scheduler step
     scheduler.step(average_loss)
     print(f"Current learning rate: {optimizer.param_groups[0]['lr']}")
+
     model.eval()
     start_tokens = tensor_text[0][:20].squeeze(0).unsqueeze(0).to(device)
     generated_text = model.generate(start_tokens, max_new_tokens=400, temperature=0.5)
@@ -111,7 +150,6 @@ for epoch in range(num_epochs):
     separator = "------------------------"
     with open(generated_text_path, "a") as file:
         file.write(f"\n{separator}\nEpoch {epoch+1}\n{resulting_text}\n")
-
 
     # Early stopping check
     if average_loss < best_loss:
@@ -123,20 +161,19 @@ for epoch in range(num_epochs):
             print(f"Early stopping triggered after {epoch+1} epochs.")
             break
 
-
+################# Save model and optimizer state at the end of the training #################
 languagemodel_path = MODEL_STATES_PATH
 if not os.path.exists(languagemodel_path):
     os.makedirs(languagemodel_path)
 
-model_save_path = languagemodel_path+"language_model_state_dict.pth"
+model_save_path = languagemodel_path + "language_model_state_dict.pth"
 torch.save(model.state_dict(), model_save_path)
 if os.path.exists(COLAB_PATH):
     torch.save(model.state_dict(), f'{COLAB_PATH}language_model_state_dict.pth')
 
-optimizer_save_path = languagemodel_path+"optimizer.pth"
+optimizer_save_path = languagemodel_path + "optimizer.pth"
 torch.save(optimizer.state_dict(), optimizer_save_path)
 if os.path.exists(COLAB_PATH):
     torch.save(optimizer.state_dict(), f'{COLAB_PATH}optimizer.pth')
 
 print(f"Model and optimizer state saved to {model_save_path} and {optimizer_save_path}, respectively.")
-
