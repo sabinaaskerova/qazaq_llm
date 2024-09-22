@@ -53,21 +53,6 @@ config = {
     "device": device,
     "multiple": 64
 }
-################# Model training #################
-model = LanguageModel(config).to(device)
-model.train()
-criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
-
-checkpoint_interval = 30000  # save model every 30000 batches
-patience = 5 # Early stopping patience
-
-best_loss = float('inf')
-
-epochs_no_improve = 0
-
-# Learning rate scheduler
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=patience)
 
 # Function to save checkpoints
 def save_checkpoint(model, optimizer, epoch, batch_idx, best_loss):
@@ -87,11 +72,18 @@ def save_checkpoint(model, optimizer, epoch, batch_idx, best_loss):
 # Load checkpoint if exists
 def load_checkpoint():
     checkpoints = [f for f in os.listdir(MODEL_STATES_PATH) if f.startswith('checkpoint')]
-    if not checkpoints:
-        return None, 0, 0, float('inf')
+    checkpoints_colab = []
+    if not checkpoints and os.path.exists(COLAB_PATH):
+        checkpoints_colab = [f for f in os.listdir(COLAB_PATH) if f.startswith('checkpoint')]
+
+    if not checkpoints_colab:
+            return None, None, 0, 0, float('inf')
 
     latest_checkpoint = sorted(checkpoints, key=lambda x: int(x.split('_')[2].split('epoch')[1]))[-1]
-    checkpoint = torch.load(MODEL_STATES_PATH + latest_checkpoint, map_location=device)
+    if checkpoints:
+        checkpoint = torch.load(MODEL_STATES_PATH + latest_checkpoint, map_location=device)
+    else:
+        checkpoint = torch.load(COLAB_PATH + latest_checkpoint, map_location=device)
 
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -101,8 +93,19 @@ def load_checkpoint():
     print(f'Resuming from checkpoint: {latest_checkpoint}')
     return model, optimizer, epoch, batch_idx, best_loss
 
-# Attempt to resume from checkpoint
+# Attempt to resume from checkpoint 
 model, optimizer, start_epoch, start_batch, best_loss = load_checkpoint()
+if model is None:
+    model = LanguageModel(config).to(device)
+    model.train()
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+    checkpoint_interval = 30000  # save model every 30000 batches
+
+patience = 5 # Early stopping patience
+epochs_no_improve = 0
+# Learning rate scheduler
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=patience)
 
 ##################### Training loop
 num_epochs = 500
