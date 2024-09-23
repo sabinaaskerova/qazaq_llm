@@ -55,14 +55,15 @@ config = {
 }
 
 # Function to save checkpoints
-def save_checkpoint(model, optimizer, epoch, batch_idx, best_loss):
+def save_checkpoint(model, optimizer, epoch, batch_idx, best_loss, epochs_no_improve):
     checkpoint_path = f'{MODEL_STATES_PATH}checkpoint_epoch{epoch}_batch{batch_idx}.pth'
     checkpoint = {
         'epoch': epoch,
         'batch_idx': batch_idx,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
-        'best_loss': best_loss
+        'best_loss': best_loss,
+        'epochs_no_improve': epochs_no_improve
     }
     torch.save(checkpoint, checkpoint_path)
     if os.path.exists(COLAB_PATH):
@@ -77,7 +78,7 @@ def load_checkpoint():
         checkpoints_colab = [f for f in os.listdir(COLAB_PATH) if f.startswith('checkpoint')]
 
     if not checkpoints_colab:
-            return None, None, 0, 0, float('inf')
+            return None, None, 0, 0, float('inf'), 0
 
     latest_checkpoint = sorted(checkpoints, key=lambda x: int(x.split('_')[2].split('epoch')[1]))[-1]
     if checkpoints:
@@ -90,20 +91,21 @@ def load_checkpoint():
     epoch = checkpoint['epoch']
     batch_idx = checkpoint['batch_idx']
     best_loss = checkpoint['best_loss']
+    epochs_no_improve = checkpoint['epochs_no_improve']
     print(f'Resuming from checkpoint: {latest_checkpoint}')
-    return model, optimizer, epoch, batch_idx, best_loss
+    return model, optimizer, epoch, batch_idx, best_loss, epochs_no_improve
 
 # Attempt to resume from checkpoint 
-model, optimizer, start_epoch, start_batch, best_loss = load_checkpoint()
+model, optimizer, start_epoch, start_batch, best_loss, epochs_no_improve = load_checkpoint()
 if model is None:
     model = LanguageModel(config).to(device)
     model.train()
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
     checkpoint_interval = 15000  # save model every n batches
+    epochs_no_improve = 0
 
 patience = 5 # Early stopping patience
-epochs_no_improve = 0
 # Learning rate scheduler
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=patience)
 
