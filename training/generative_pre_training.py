@@ -70,6 +70,15 @@ def save_checkpoint(model, optimizer, epoch, batch_idx, best_loss, epochs_no_imp
         torch.save(checkpoint, f'{COLAB_PATH}checkpoint_epoch{epoch}_batch{batch_idx}.pth')
     print(f'Checkpoint saved at {checkpoint_path}')
 
+    # Delete previous checkpoints
+    checkpoints = [f for f in os.listdir(MODEL_STATES_PATH) if f.startswith('checkpoint') and f.endswith('.pth')]
+    if len(checkpoints) > 2:
+        checkpoints.sort(key=lambda x: int(x.split('_')[2].split('epoch')[1]))
+        for old_checkpoint in checkpoints[:-2]: # Keep the last two checkpoints
+            os.remove(MODEL_STATES_PATH + old_checkpoint)
+            if os.path.exists(COLAB_PATH):
+                os.remove(COLAB_PATH + old_checkpoint)
+
 # Load checkpoint if exists
 def load_checkpoint():
     checkpoints = [f for f in os.listdir(MODEL_STATES_PATH) if f.startswith('checkpoint')]
