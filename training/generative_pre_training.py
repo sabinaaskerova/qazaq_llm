@@ -88,27 +88,38 @@ def save_checkpoint(model, optimizer, epoch, batch_idx, best_loss, epochs_no_imp
 
 # Load checkpoint if exists
 def load_checkpoint():
-    checkpoints = [f for f in os.listdir(MODEL_STATES_PATH) if f.startswith('checkpoint')]
-    checkpoints_colab = []
-    if not checkpoints and os.path.exists(COLAB_PATH):
-        checkpoints_colab = [f for f in os.listdir(COLAB_PATH) if f.startswith('checkpoint')]
-
-    if not checkpoints_colab:
-            return None, None, 0, 0, float('inf'), 0
-
-    latest_checkpoint = sorted(checkpoints, key=lambda x: int(x.split('_')[2].split('epoch')[1]))[-1]
+    checkpoints = [f for f in os.listdir(MODEL_STATES_PATH) if f.startswith('checkpoint') and f.endswith('.pth')]
     if checkpoints:
-        checkpoint = torch.load(MODEL_STATES_PATH + latest_checkpoint, map_location=device)
+        checkpoints.sort(key=lambda x: int(x.split('_')[2].split('batch')[1].split('.')[0]))
+        checkpoint_path = MODEL_STATES_PATH + checkpoints[-1] 
+    elif os.path.exists(COLAB_PATH):
+        checkpoints = [f for f in os.listdir(COLAB_PATH) if f.startswith('checkpoint') and f.endswith('.pth')]
+        if checkpoints:
+            checkpoints.sort(key=lambda x: int(x.split('_')[2].split('batch')[1].split('.')[0]))
+            checkpoint_path = COLAB_PATH + checkpoints[-1]
     else:
-        checkpoint = torch.load(COLAB_PATH + latest_checkpoint, map_location=device)
+        return None, None, 0, 0, float('inf'), 0
+        
+    if checkpoints:
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+    else:
+        checkpoint = torch.load(checkpoint_path, map_location=device)
 
+    model = LanguageModel(config).to(device)
     model.load_state_dict(checkpoint['model_state_dict'])
+    model.train()
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
     epoch = checkpoint['epoch']
     batch_idx = checkpoint['batch_idx']
     best_loss = checkpoint['best_loss']
-    epochs_no_improve = checkpoint['epochs_no_improve']
-    print(f'Resuming from checkpoint: {latest_checkpoint}')
+    if 'epochs_no_improve' in checkpoint:
+        epochs_no_improve = checkpoint['epochs_no_improve']
+    else:
+        epochs_no_improve = 0
+    print(f'Resuming from checkpoint: {checkpoint_path}')
     return model, optimizer, epoch, batch_idx, best_loss, epochs_no_improve
 
 # Attempt to resume from checkpoint 
@@ -116,12 +127,12 @@ model, optimizer, start_epoch, start_batch, best_loss, epochs_no_improve = load_
 if model is None:
     model = LanguageModel(config).to(device)
     model.train()
-    criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
-    checkpoint_interval = 15000  # save model every n batches
     epochs_no_improve = 0
 
 patience = 5 # Early stopping patience
+criterion = nn.CrossEntropyLoss()
+checkpoint_interval = 15000  # save model every n batches
 # Learning rate scheduler
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=patience)
 
@@ -149,12 +160,12 @@ for epoch in range(start_epoch, num_epochs):
         total_loss += loss.item()
 
         if (batch_idx + 1) % checkpoint_interval == 0 or (batch_idx + 1) == len(train_loader):
-            save_checkpoint(model, optimizer, epoch, batch_idx, best_loss)
+            save_checkpoint(model, optimizer, epoch, batch_idx, best_loss, epochs_no_improve)
 
         if (batch_idx + 1) % 10 == 0:
             print(f"Epoch {epoch+1}/{num_epochs}, Batch {batch_idx+1}/{len(train_loader)}, Batch Loss: {loss.item()}")
 
-    save_checkpoint(model, optimizer, epoch, batch_idx, best_loss)
+    save_checkpoint(model, optimizer, epoch, batch_idx, best_loss, epochs_no_improve)
 
     average_loss = total_loss / len(train_loader)
     print(f"Epoch {epoch+1}/{num_epochs}, Average Loss: {average_loss}")
