@@ -30,10 +30,24 @@ config = {
     "device": device,
     "multiple": 64
 }
-# example state_dict
+
 model = LanguageModel(config).to(device)
-state_dict = torch.load('/content/drive/MyDrive/QazaqLLM/model_checkpoint_epoch1_batch78892.pth', map_location=device)
-model.load_state_dict(state_dict)
+
+# Load the checkpoint
+checkpoints = [f for f in os.listdir(MODEL_STATES_PATH) if f.startswith('checkpoint') and f.endswith('.pth')]
+if checkpoints:
+    checkpoints.sort(key=lambda x: int(x.split('_')[2].split('batch')[1].split('.')[0]))
+    checkpoint_path = MODEL_STATES_PATH + checkpoints[-1] 
+elif os.path.exists(COLAB_PATH):
+    checkpoints = [f for f in os.listdir(COLAB_PATH) if f.startswith('checkpoint') and f.endswith('.pth')]
+    if checkpoints:
+        checkpoints.sort(key=lambda x: int(x.split('_')[2].split('batch')[1].split('.')[0]))
+        checkpoint_path = COLAB_PATH + checkpoints[-1]
+
+checkpoint = torch.load(checkpoint_path, map_location=device)
+model_state_dict = checkpoint['model_state_dict']
+model.load_state_dict(model_state_dict)
+
 
 start_tokens = tensor_text[0][:20].squeeze(0).unsqueeze(0).to(device)
 generated_text = model.generate(start_tokens, max_new_tokens=400, temperature=1.0)
