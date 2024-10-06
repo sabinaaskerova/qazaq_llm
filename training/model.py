@@ -197,6 +197,8 @@ class LanguageModel(nn.Module):
 
         self.freqs_complex = compute_rotary_matrices(self.max_seq_len * 2, self.n_embd//self.n_heads, device=self.device).to(self.device)
 
+    def get_input_embeddings(self):
+        return self.embedding
     
     def forward(self, x:torch.Tensor, start_pos):
         x = self.embedding(x).to(self.device)
@@ -206,6 +208,32 @@ class LanguageModel(nn.Module):
         x = self.rms_norm(x)
         x = self.out(x)
         return x
+    
+    def resize_token_embeddings(self, new_vocab_size):
+        """
+        Resize the token embedding and output layers to match the new vocabulary size.
+        """
+        # Resize embedding layer
+        old_embedding = self.embedding
+        new_embedding = nn.Embedding(new_vocab_size, self.n_embd).to(self.device)
+        
+        # Copy existing weights
+        num_embeddings_to_copy = min(old_embedding.weight.size(0), new_vocab_size)
+        new_embedding.weight.data[:num_embeddings_to_copy] = old_embedding.weight.data[:num_embeddings_to_copy]
+        self.embedding = new_embedding
+
+        # Resize the output layer
+        old_out = self.out
+        new_out = nn.Linear(self.n_embd, new_vocab_size).to(self.device)
+        
+        # Copy existing weights for the output layer
+        new_out.weight.data[:num_embeddings_to_copy] = old_out.weight.data[:num_embeddings_to_copy]
+        new_out.bias.data[:num_embeddings_to_copy] = old_out.bias.data[:num_embeddings_to_copy]
+        self.out = new_out
+
+        # Update the model's vocabulary size
+        self.vocab_size = new_vocab_size
+        print(f"Resized token embeddings to new vocab size: {new_vocab_size}")
 
     # assuming idx is on the correct device
     @torch.no_grad()

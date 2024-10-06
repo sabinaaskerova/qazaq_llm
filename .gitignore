@@ -2,7 +2,7 @@ __pycache__
 *.pth
 plain_text_datasets/
 instruction_datasets/
-tokenizer_model/
+# tokenizer_model/
 .env
 .venv/
 *.csv
