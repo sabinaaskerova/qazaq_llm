@@ -17,9 +17,8 @@ class Tokenizer:
     def id_to_token(self, id):
         return self.sp.IdToPiece(id)
     
-    def encode(self, text):
+    def encode(self, text): # returns a list of ids
         return self.sp.EncodeAsIds(text)
     
     def decode(self, ids):
         return self.sp.DecodeIds(ids)
-    
