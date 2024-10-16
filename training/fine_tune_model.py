@@ -39,9 +39,9 @@ def prepare_and_tokenize_data(csv_path):
     df = pd.read_csv(csv_path)
     tokenized_data = []
     for _, row in df.iterrows():
-        instruction = f"<s><instruction>{row['instruction_kz']}</instruction>"
-        context = f"<context>{row['context_kz']}</context>" if 'context' in row and pd.notna(row['context']) else ""
-        response = f"<response>{row['response_kz']}</response></s>"
+        instruction = f"<s><instruction> {row['instruction_kz']} </instruction>"
+        context = f"<context> {row['context_kz']} </context>" if 'context' in row and pd.notna(row['context']) else ""
+        response = f"<response> {row['response_kz']} </response></s>"
         full_text = f"{instruction}{context}{response}"
         tokenized = tokenize_with_special_tokens(full_text)
         tokenized_data.append(torch.tensor(tokenized))
@@ -71,7 +71,9 @@ class QADataset(Dataset):
         # Find the maximum length in the batch
         max_len = max(len(seq) for seq in batch)
         # Pad sequences to the maximum length
-        padded_batch = torch.full((len(batch), max_len), self.eos_token_id, dtype=torch.long)
+        pad_token_id = tokenizer.pad_id()  # Ensure your SentencePiece model has a padding token
+        padded_batch = torch.full((len(batch), max_len), pad_token_id, dtype=torch.long)
+
         for i, seq in enumerate(batch):
             padded_batch[i, :len(seq)] = seq
         return padded_batch, padded_batch  # Return inputs and targets
@@ -151,9 +153,8 @@ def load_checkpoint():
         return None, None, 0, 0, float('inf'), 0
         
     if checkpoints:
-        checkpoint = torch.load(checkpoint_path, map_location=device)
-    else:
-        checkpoint = torch.load(checkpoint_path, map_location=device)
+        torch.load(checkpoint_path, map_location=device, weights_only=True)
+
 
     model = LanguageModel(config).to(device)
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -233,8 +234,9 @@ for epoch in range(start_epoch, num_epochs):
         start_pos = 0  # Initialize start_pos to 0 for each new batch
         print("input.shape", inputs.size())
         outputs = model(inputs, start_pos)  # Pass start_pos to the model
-        outputs = outputs.squeeze(0)  # to remove batch dimension
-        loss = criterion(outputs, targets)
+        # outputs = outputs.squeeze(0)  # to remove batch dimension
+        # loss = criterion(outputs, targets)
+        loss = criterion(outputs.view(-1, outputs.size(-1)), targets.view(-1))  # Flatten for CrossEntropyLoss
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
