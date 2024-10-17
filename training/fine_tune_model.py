@@ -5,6 +5,7 @@ import torch.nn as nn
 torch.autograd.set_detect_anomaly(True)
 import sentencepiece as spm
 from project_config.data_config import *
+from tokenization.special_tokenizer import SpecialTokenizerWrapper
 
 ################# Environment setup #################
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
@@ -16,9 +17,14 @@ tokenizer = spm.SentencePieceProcessor()
 tokenizer.Load(tokenizer_path + "m.model")
 tensor_text = torch.load(tokenizer_path + "finetuning_tokenized_data.pt", map_location=device) # we will finetune the model on qna data
 
-vocab_size = tokenizer.get_piece_size()
-vocab_tokens = [tokenizer.id_to_piece(i) for i in range(vocab_size)]
-print(f"First 100 tokens in vocabulary: {vocab_tokens[:100]}")
+special_tokens = [
+    "<s>", "</s>",
+    "<instruction>", "</instruction>",
+    "<context>", "</context>",
+    "<response>", "</response>"
+] 
+
+vocab_size = tokenizer.get_piece_size() 
 
 class TextDataset(torch.utils.data.Dataset):
     def __init__(self, tensor_text):
@@ -30,11 +36,11 @@ class TextDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         return self.tensor_text[0][idx], self.tensor_text[0][idx + 1]
 
-dataset = TextDataset(tensor_text)
+train_dataset  = TextDataset(tensor_text)
 
-train_size = len(dataset)
+train_size = len(train_dataset)
 print(f"Train size: {train_size}")
-train_dataset = dataset
+
 
 batch_size = 32
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -119,16 +125,7 @@ def load_checkpoint():
         epochs_no_improve = 0
     print(f'Resuming from checkpoint: {checkpoint_path}')
     return model, optimizer, epoch, batch_idx, best_loss, epochs_no_improve
-
-model = LanguageModel(config).to(device)
-
-
-special_tokens = [
-    "<s>", "</s>",
-    "<instruction>", "</instruction>",
-    "<context>", "</context>",
-    "<response>", "</response>"
-]
+  
 
 
 ##################### Load the pretraining checkpoint
@@ -139,23 +136,18 @@ if not finetuning_checkpoints: # if there is no finetuning checkpoint, load the 
     checkpoints = [f for f in os.listdir(MODEL_STATES_PATH) if f.startswith('checkpoint') and f.endswith('.pth')]
 
     if checkpoints:
-        checkpoints.sort(key=lambda x: int(x.split('_')[3].split('batch')[1].split('.')[0]))
+        checkpoints.sort(key=lambda x: int(x.split('_')[2].split('batch')[1].split('.')[0]))
         checkpoint_path = MODEL_STATES_PATH + checkpoints[-1]
     elif os.path.exists(COLAB_PATH):
         checkpoints = [f for f in os.listdir(COLAB_PATH) if f.startswith('checkpoint') and f.endswith('.pth')]
         if checkpoints:
-            checkpoints.sort(key=lambda x: int(x.split('_')[3].split('batch')[1].split('.')[0]))
+            checkpoints.sort(key=lambda x: int(x.split('_')[2].split('batch')[1].split('.')[0]))
             checkpoint_path = COLAB_PATH + checkpoints[-1]
 
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+    model = LanguageModel(config).to(device)
     model_state_dict = checkpoint['model_state_dict']
-    new_vocab_size = tokenizer.vocab_size() + len(special_tokens)
-    model.resize_token_embeddings(new_vocab_size)
-
-    old_embedding = model.get_input_embeddings().weight.data
-    if old_embedding.size(0) < new_vocab_size:
-        new_embedding = torch.mean(old_embedding, dim=0)
-        model.get_input_embeddings().weight.data[-len(special_tokens):] = new_embedding.unsqueeze(0).repeat(len(special_tokens), 1)
+    model.resize_token_embeddings(vocab_size+len(special_tokens)) # resize the token embeddings to the new vocab size
 
     # Load the state dict excluding the embedding and output layers
     filtered_state_dict = {k: v for k, v in model_state_dict.items() if 'embedding' not in k and 'out' not in k}
@@ -168,6 +160,8 @@ if not finetuning_checkpoints: # if there is no finetuning checkpoint, load the 
     epochs_no_improve = 0
 
 else: # if resuming from a finetuning checkpoint
+    config["vocab_size"] = vocab_size + len(special_tokens)
+    model = LanguageModel(config).to(device)
     model, optimizer, start_epoch, start_batch, best_loss, epochs_no_improve = load_checkpoint()
 
 
