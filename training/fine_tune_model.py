@@ -73,7 +73,7 @@ def save_checkpoint(model, optimizer, epoch, batch_idx, best_loss, epochs_no_imp
     checkpoints = [f for f in os.listdir(MODEL_STATES_PATH) if f.startswith('finetuning_checkpoint') and f.endswith('.pth')]
     if checkpoints:
         if len(checkpoints) > 2:
-            checkpoints.sort(key=lambda x: int(x.split('_')[2].split('batch')[1].split('.')[0]))
+            checkpoints.sort(key=lambda x: int(x.split('_')[3].split('batch')[1].split('.')[0]))
             for old_checkpoint in checkpoints[:-2]: # Keep the last two checkpoints
                 os.remove(MODEL_STATES_PATH + old_checkpoint)
              
@@ -81,7 +81,7 @@ def save_checkpoint(model, optimizer, epoch, batch_idx, best_loss, epochs_no_imp
         checkpoints = [f for f in os.listdir(COLAB_PATH) if f.startswith('finetuning_checkpoint') and f.endswith('.pth')]
         if checkpoints:
             if len(checkpoints) > 2:
-                checkpoints.sort(key=lambda x: int(x.split('_')[2].split('batch')[1].split('.')[0]))
+                checkpoints.sort(key=lambda x: int(x.split('_')[3].split('batch')[1].split('.')[0]))
                 for old_checkpoint in checkpoints[:-2]:
                     os.remove(COLAB_PATH + old_checkpoint)
 
@@ -89,18 +89,18 @@ def save_checkpoint(model, optimizer, epoch, batch_idx, best_loss, epochs_no_imp
 def load_checkpoint():
     checkpoints = [f for f in os.listdir(MODEL_STATES_PATH) if f.startswith('finetuning_checkpoint') and f.endswith('.pth')]
     if checkpoints:
-        checkpoints.sort(key=lambda x: int(x.split('_')[2].split('batch')[1].split('.')[0]))
+        checkpoints.sort(key=lambda x: int(x.split('_')[3].split('batch')[1].split('.')[0]))
         checkpoint_path = MODEL_STATES_PATH + checkpoints[-1] 
     elif os.path.exists(COLAB_PATH):
         checkpoints = [f for f in os.listdir(COLAB_PATH) if f.startswith('finetuning_checkpoint') and f.endswith('.pth')]
         if checkpoints:
-            checkpoints.sort(key=lambda x: int(x.split('_')[2].split('batch')[1].split('.')[0]))
+            checkpoints.sort(key=lambda x: int(x.split('_')[3].split('batch')[1].split('.')[0]))
             checkpoint_path = COLAB_PATH + checkpoints[-1]
     else:
         return None, None, 0, 0, float('inf'), 0
         
-    if checkpoints:
-        torch.load(checkpoint_path, map_location=device, weights_only=True)
+    
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
 
 
     model = LanguageModel(config).to(device)
@@ -139,12 +139,12 @@ if not finetuning_checkpoints: # if there is no finetuning checkpoint, load the 
     checkpoints = [f for f in os.listdir(MODEL_STATES_PATH) if f.startswith('checkpoint') and f.endswith('.pth')]
 
     if checkpoints:
-        checkpoints.sort(key=lambda x: int(x.split('_')[2].split('batch')[1].split('.')[0]))
+        checkpoints.sort(key=lambda x: int(x.split('_')[3].split('batch')[1].split('.')[0]))
         checkpoint_path = MODEL_STATES_PATH + checkpoints[-1]
     elif os.path.exists(COLAB_PATH):
         checkpoints = [f for f in os.listdir(COLAB_PATH) if f.startswith('checkpoint') and f.endswith('.pth')]
         if checkpoints:
-            checkpoints.sort(key=lambda x: int(x.split('_')[2].split('batch')[1].split('.')[0]))
+            checkpoints.sort(key=lambda x: int(x.split('_')[3].split('batch')[1].split('.')[0]))
             checkpoint_path = COLAB_PATH + checkpoints[-1]
 
     checkpoint = torch.load(checkpoint_path, map_location=device)
