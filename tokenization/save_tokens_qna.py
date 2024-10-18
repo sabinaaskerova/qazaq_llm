@@ -1,5 +1,4 @@
 import torch
-from tokenizer import Tokenizer
 from project_config.data_config import *
 import pandas as pd
 import sentencepiece as spm
