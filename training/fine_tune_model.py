@@ -25,6 +25,7 @@ special_tokens = [
 ]
 
 vocab_size = tokenizer.get_piece_size()
+new_vocab_size = vocab_size + len(special_tokens)
 
 class TextDataset(torch.utils.data.Dataset):
     def __init__(self, tensor_text):
@@ -120,23 +121,25 @@ def save_checkpoint(model, optimizer, epoch, batch_idx, best_loss, epochs_no_imp
 
 def load_checkpoint():
     checkpoint_path = None
-
     checkpoints = [f for f in os.listdir(COLAB_PATH) if f.startswith('finetuning_checkpoint') and f.endswith('.pth')]
-    
+   
     if checkpoints:
+        config["vocab_size"] = new_vocab_size
+        model = LanguageModel(config).to(device)
         checkpoints.sort(key=lambda x: int(x.split('_')[3].split('batch')[1].split('.')[0]))
         checkpoint_path = COLAB_PATH + checkpoints[-1]
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+        model.load_state_dict(checkpoint['model_state_dict'])
     else: # no fine-tuning checkpoints, we will use the pre-training checkpoint
         # I assume there is always a pre-training checkpoint, otherwise why would you be fine-tuning?
         checkpoints = [f for f in os.listdir(COLAB_PATH) if f.startswith('checkpoint') and f.endswith('.pth')]
         assert checkpoints, "No pre-training checkpoints found"
-        checkpoints.sort(key=lambda x: int(x.split('_')[3].split('batch')[1].split('.')[0]))
+        checkpoints.sort(key=lambda x: int(x.split('_')[2].split('batch')[1].split('.')[0]))
         checkpoint_path = COLAB_PATH + checkpoints[-1]
-
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
-
-    model = LanguageModel(config).to(device)
-    model.load_state_dict(checkpoint['model_state_dict'])
+        model = LanguageModel(config).to(device)
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        model.resize_token_embeddings(new_vocab_size)
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -150,8 +153,6 @@ def load_checkpoint():
         checkpoint.get('epochs_no_improve', 0)
     )
 ##################### Load checkpoint or initialize model
-
-config["vocab_size"] = vocab_size + len(special_tokens)
 model, optimizer, start_epoch, start_batch, best_loss, epochs_no_improve = load_checkpoint()
 
 # Training configuration
