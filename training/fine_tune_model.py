@@ -35,30 +35,8 @@ class TextDataset(torch.utils.data.Dataset):
         return self.tensor_text.shape[1] - 1
         
     def __getitem__(self, idx):
-        # Find the start of the current sequence
-        current_seq = self.tensor_text[0][idx:idx + 1024]  # Limit sequence length
-        
-        # Find positions of special tokens
-        instruction_start = -1
-        response_start = -1
-        
-        for i in range(len(current_seq) - 1):
-            if current_seq[i] == tokenizer.piece_to_id("<instruction>"):
-                instruction_start = i
-            elif current_seq[i] == tokenizer.piece_to_id("<response>"):
-                response_start = i
-                break
-        
-        # If we found both markers, separate input and target
-        if instruction_start != -1 and response_start != -1:
-            input_seq = current_seq[instruction_start:response_start]
-            target_seq = current_seq[response_start:response_start + 1]  # Only predict first response token
-        else:
-            # Fallback to original behavior if markers not found
-            input_seq = current_seq[:-1]
-            target_seq = current_seq[1:]
-            
-        return input_seq, target_seq
+        return self.tensor_text[0][idx], self.tensor_text[0][idx + 1]
+
 
 train_dataset = TextDataset(tensor_text)
 
@@ -66,8 +44,7 @@ batch_size = 32
 train_loader = torch.utils.data.DataLoader(
     train_dataset, 
     batch_size=batch_size, 
-    shuffle=True,
-    collate_fn=lambda x: pad_sequences(x, vocab_size)  # New padding function
+    shuffle=True
 )
 
 def pad_sequences(batch, vocab_size):
@@ -123,35 +100,55 @@ def load_checkpoint():
     checkpoint_path = None
     checkpoints = [f for f in os.listdir(COLAB_PATH) if f.startswith('finetuning_checkpoint') and f.endswith('.pth')]
    
-    if checkpoints:
-        config["vocab_size"] = new_vocab_size
+    if checkpoints:  # If we have finetuning checkpoints
+        config["vocab_size"] = new_vocab_size  # Use the expanded vocab size
         model = LanguageModel(config).to(device)
         checkpoints.sort(key=lambda x: int(x.split('_')[3].split('batch')[1].split('.')[0]))
         checkpoint_path = COLAB_PATH + checkpoints[-1]
-        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+        checkpoint = torch.load(checkpoint_path, map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
-    else: # no fine-tuning checkpoints, we will use the pre-training checkpoint
-        # I assume there is always a pre-training checkpoint, otherwise why would you be fine-tuning?
+        
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
+        return (
+            model,
+            optimizer,
+            checkpoint['epoch'],
+            checkpoint['batch_idx'],
+            checkpoint['best_loss'],
+            checkpoint.get('epochs_no_improve', 0)
+        )
+    else:  # No finetuning checkpoints, use pre-training checkpoint
         checkpoints = [f for f in os.listdir(COLAB_PATH) if f.startswith('checkpoint') and f.endswith('.pth')]
         assert checkpoints, "No pre-training checkpoints found"
         checkpoints.sort(key=lambda x: int(x.split('_')[2].split('batch')[1].split('.')[0]))
         checkpoint_path = COLAB_PATH + checkpoints[-1]
-        model = LanguageModel(config).to(device)
-        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+        
+        # Load the model with original vocab size first
+        original_config = config.copy()
+        original_config["vocab_size"] = 32000  # Original vocab size
+        model = LanguageModel(original_config).to(device)
+        
+        # Load the checkpoint
+        checkpoint = torch.load(checkpoint_path, map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
+        
+        # Now resize the model
         model.resize_token_embeddings(new_vocab_size)
-    
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    
-    return (
-        model,
-        optimizer,
-        checkpoint['epoch'],
-        checkpoint['batch_idx'],
-        checkpoint['best_loss'],
-        checkpoint.get('epochs_no_improve', 0)
-    )
+        
+        # Create a new optimizer with the resized model parameters
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
+        
+        # Don't load optimizer state from checkpoint since we resized the model
+        return (
+            model,
+            optimizer,
+            0,  # Start from epoch 0
+            0,  # Start from batch 0
+            float('inf'),  # Initial best loss
+            0   # No epochs without improvement yet
+        )
 ##################### Load checkpoint or initialize model
 model, optimizer, start_epoch, start_batch, best_loss, epochs_no_improve = load_checkpoint()
 
@@ -162,40 +159,38 @@ checkpoint_interval = 15000 # Save checkpoint every n batches
 
 ##################### Training loop
 num_epochs = 100
-accumulation_steps = 4  # Gradient accumulation steps
-
 for epoch in range(start_epoch, num_epochs):
     model.train()
     total_loss = 0
-    optimizer.zero_grad()
     
     for batch_idx, (inputs, targets) in enumerate(train_loader):
         if epoch == start_epoch and batch_idx < start_batch:
             continue
             
+        inputs = inputs.unsqueeze(0)  # add batch dimension
         inputs, targets = inputs.to(device), targets.to(device)
+        
+        optimizer.zero_grad()
         
         # Forward pass
         outputs = model(inputs, start_pos=0)
-        loss = criterion(outputs.view(-1, outputs.size(-1)), targets.view(-1))
+        outputs = outputs.squeeze(0)  # remove batch dimension
+        loss = criterion(outputs, targets)
         
-        # Gradient accumulation
-        loss = loss / accumulation_steps
+        # Backward pass
         loss.backward()
         
-        if (batch_idx + 1) % accumulation_steps == 0:
-            # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            optimizer.step()
-            optimizer.zero_grad()
+        # Gradient clipping
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        optimizer.step()
             
-        total_loss += loss.item() * accumulation_steps
+        total_loss += loss.item()
         
         if (batch_idx + 1) % checkpoint_interval == 0:
             save_checkpoint(model, optimizer, epoch, batch_idx, best_loss, epochs_no_improve)
             
         if (batch_idx + 1) % 10 == 0:
-            print(f"Epoch {epoch+1}/{num_epochs}, Batch {batch_idx+1}/{len(train_loader)}, Loss: {loss.item() * accumulation_steps}")
+            print(f"Epoch {epoch+1}/{num_epochs}, Batch {batch_idx+1}/{len(train_loader)}, Loss: {loss.item()}")
     
     average_loss = total_loss / len(train_loader)
     print(f"Epoch {epoch+1}/{num_epochs}, Average Loss: {average_loss}")
@@ -209,7 +204,7 @@ for epoch in range(start_epoch, num_epochs):
         epochs_no_improve = 0
     else:
         epochs_no_improve += 1
-        if epochs_no_improve >= 5:  # Early stopping patience
+        if epochs_no_improve >= 5:
             print(f"Early stopping triggered after {epoch+1} epochs.")
             break
 
